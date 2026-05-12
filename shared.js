@@ -685,13 +685,13 @@ function setupNewGameForm(prefill) {
     if (!id) {
       status.style.display = 'none';
       editor.style.display = 'none';
-      $('course-name').value = '';
-      $('course-name').dataset.courseId = '';
+      { const _el_0 = $('course-name'); if (_el_0) _el_0.value = ''; }
+      { const _g0 = $('course-name'); if (_g0) _g0.dataset.courseId = '';
       return;
     }
     if (id === 'custom') {
-      $('course-name').value = '';
-      $('course-name').dataset.courseId = '';
+      { const _el_1 = $('course-name'); if (_el_1) _el_1.value = ''; }
+      { const _g1 = $('course-name'); if (_g1) _g1.dataset.courseId = '';
       $('course-name').focus();
       status.className = 'course-status custom';
       status.querySelector('.icon').textContent = '✏️';
@@ -706,8 +706,8 @@ function setupNewGameForm(prefill) {
     }
     // Library course
     const lib = COURSE_LIBRARY.find(c => c.id === id);
-    $('course-name').value = lib.name;
-    $('course-name').dataset.courseId = id;
+    { const _el_2 = $('course-name'); if (_el_2) _el_2.value = lib.name; }
+    { const _g2 = $('course-name'); if (_g2) _g2.dataset.courseId = id;
 
     // Check for saved scorecard
     const saved = await getCourseScorecard(id);
@@ -779,11 +779,11 @@ function setupNewGameForm(prefill) {
   state.nassauInstances = [];
 
   // Reset course UI
-  $('course-name').value = '';
-  $('course-name').dataset.courseId = '';
-  $('course-status').style.display = 'none';
-  $('scorecard-editor').style.display = 'none';
-  $('course-picker').value = '';
+  { const _el_3 = $('course-name'); if (_el_3) _el_3.value = ''; }
+  { const _g3 = $('course-name'); if (_g3) _g3.dataset.courseId = '';
+  { const _g4 = $('course-status'); if (_g4) _g4.style.display = 'none';
+  { const _g5 = $('scorecard-editor'); if (_g5) _g5.style.display = 'none';
+  { const _el_4 = $('course-picker'); if (_el_4) _el_4.value = ''; }
   $('course-rating') && ($('course-rating').value = '');
   $('course-slope') && ($('course-slope').value = '');
   // Tees: clear and start fresh (one empty row to begin with)
@@ -792,11 +792,11 @@ function setupNewGameForm(prefill) {
 
   // Tournament context
   if (prefill && prefill.tourneyId) {
-    $('tourney-context').style.display = 'block';
-    $('tourney-context-name').textContent = prefill.tourneyName || 'Tournament';
-    $('tourney-context-date').textContent = prefill.tourneyDate || '';
+    { const _g6 = $('tourney-context'); if (_g6) _g6.style.display = 'block';
+    { const _el_5 = $('tourney-context-name'); if (_el_5) _el_5.textContent = prefill.tourneyName || 'Tournament'; }
+    { const _el_6 = $('tourney-context-date'); if (_el_6) _el_6.textContent = prefill.tourneyDate || ''; }
   } else {
-    $('tourney-context').style.display = 'none';
+    { const _g7 = $('tourney-context'); if (_g7) _g7.style.display = 'none';
   }
 
   // If prefill includes course (from a tournament), pre-select it
@@ -809,7 +809,7 @@ function setupNewGameForm(prefill) {
     } else {
       picker.value = 'custom';
       picker.onchange();
-      $('course-name').value = prefill.course;
+      { const _el_7 = $('course-name'); if (_el_7) _el_7.value = prefill.course; }
     }
   }
 }
@@ -852,7 +852,7 @@ function addPlayerRow(name = '', hcp = 0) {
 // Open the saved-roster picker
 async function openRosterPicker() {
   $('roster-modal').classList.add('show');
-  $('roster-search').value = '';
+  { const _el_8 = $('roster-search'); if (_el_8) _el_8.value = ''; }
   await renderRosterList();
 }
 
@@ -1449,7 +1449,7 @@ function applySavedConfig(config) {
 
   // Players (use rawHcp if available so handicap percentages don't compound)
   if (config.players && config.players.length > 0) {
-    $('players-list').innerHTML = '';
+    { const _el_9 = $('players-list'); if (_el_9) _el_9.innerHTML = ''; }
     state.playerTees = state.playerTees || {};
     config.players.forEach(p => {
       addPlayerRow(p.name || '', p.rawHcp != null ? p.rawHcp : (p.hcp || 0));
@@ -1465,10 +1465,10 @@ function applySavedConfig(config) {
   if (config.hcpRules) {
     if (config.hcpRules.basis) $('hcp-basis').value = config.hcpRules.basis;
     if (config.hcpRules.pct != null) {
-      $('hcp-pct').value = config.hcpRules.pct;
-      $('hcp-pct-label').textContent = config.hcpRules.pct + '%';
+      { const _el_10 = $('hcp-pct'); if (_el_10) _el_10.value = config.hcpRules.pct; }
+      { const _el_11 = $('hcp-pct-label'); if (_el_11) _el_11.textContent = config.hcpRules.pct + '%'; }
     }
-    $('hcp-no-par3-strokes').checked = !!config.hcpRules.noPar3Strokes;
+    { const _el_12 = $('hcp-no-par3-strokes'); if (_el_12) _el_12.checked = !!config.hcpRules.noPar3Strokes; }
   }
 
   // Game toggles + their option panels
@@ -1527,12 +1527,12 @@ function applySavedConfig(config) {
   // Stroke
   if (games.stroke) {
     if (games.stroke.buyin != null) $('stroke-value').value = games.stroke.buyin;
-    $('stroke-net').value = games.stroke.net ? 'net' : 'gross';
+    { const _el_13 = $('stroke-net'); if (_el_13) _el_13.value = games.stroke.net ? 'net' : 'gross'; }
   }
 
   // Banker
   if (games.banker) {
-    $('banker-net').value = games.banker.net ? 'net' : 'gross';
+    { const _el_14 = $('banker-net'); if (_el_14) _el_14.value = games.banker.net ? 'net' : 'gross'; }
     if (games.banker.loserStart != null) $('banker-loser-start').value = games.banker.loserStart;
     if (games.banker.birdieDouble) $('banker-birdie-double').value = games.banker.birdieDouble;
     if (games.banker.order) $('banker-order').value = games.banker.order;
@@ -1541,20 +1541,20 @@ function applySavedConfig(config) {
   // Vegas
   if (games.vegas) {
     if (games.vegas.value != null) $('vegas-value').value = games.vegas.value;
-    $('vegas-net').value = games.vegas.net ? 'net' : 'gross';
-    $('vegas-rotate').value = games.vegas.rotate === 'fixed' ? 'fixed' : 'rotate';
+    { const _el_15 = $('vegas-net'); if (_el_15) _el_15.value = games.vegas.net ? 'net' : 'gross'; }
+    { const _el_16 = $('vegas-rotate'); if (_el_16) _el_16.value = games.vegas.rotate === 'fixed' ? 'fixed' : 'rotate'; }
   }
 
   // Dynamic Vegas
   if (games.dvegas) {
     if (games.dvegas.value != null) $('dvegas-value').value = games.dvegas.value;
-    $('dvegas-net').value = games.dvegas.net ? 'net' : 'gross';
+    { const _el_17 = $('dvegas-net'); if (_el_17) _el_17.value = games.dvegas.net ? 'net' : 'gross'; }
   }
 
   // Sixes
   if (games.sixes) {
     if (games.sixes.value != null) $('sixes-value').value = games.sixes.value;
-    $('sixes-net').value = games.sixes.net ? 'net' : 'gross';
+    { const _el_18 = $('sixes-net'); if (_el_18) _el_18.value = games.sixes.net ? 'net' : 'gross'; }
   }
 
   // Wolf
@@ -1587,19 +1587,19 @@ function applySavedConfig(config) {
   // Team match
   if (games.teamMatch) {
     if (games.teamMatch.value != null) $('team-match-value').value = games.teamMatch.value;
-    $('team-match-net').value = games.teamMatch.net ? 'net' : 'gross';
+    { const _el_19 = $('team-match-net'); if (_el_19) _el_19.value = games.teamMatch.net ? 'net' : 'gross'; }
   }
 
   // Team low ball
   if (games.teamLowball) {
     if (games.teamLowball.value != null) $('team-lowball-value').value = games.teamLowball.value;
-    $('team-lowball-net').value = games.teamLowball.net ? 'net' : 'gross';
+    { const _el_20 = $('team-lowball-net'); if (_el_20) _el_20.value = games.teamLowball.net ? 'net' : 'gross'; }
   }
 
   // Par 3 Greenie (with embedded Buddy Fucker)
   if (games.p3greenie) {
     if (games.p3greenie.value != null) $('p3greenie-value').value = games.p3greenie.value;
-    $('p3greenie-bf-enabled').checked = games.p3greenie.bfEnabled !== false;
+    { const _el_21 = $('p3greenie-bf-enabled'); if (_el_21) _el_21.checked = games.p3greenie.bfEnabled !== false; }
     if (games.p3greenie.bfValue != null) $('p3greenie-bf-value').value = games.p3greenie.bfValue;
   }
 
@@ -1897,11 +1897,11 @@ function renderScoreEntry() {
   const g = state.game;
   if (!g) return;
   const h = state.currentHole;
-  $('cur-hole').textContent = h;
-  $('cur-par').textContent = g.pars[h - 1];
-  $('cur-si').textContent = g.sis ? g.sis[h - 1] : '—';
-  $('score-code').textContent = g.code;
-  $('last-sync').textContent = 'synced ' + new Date(g.updatedAt).toLocaleTimeString();
+  { const _el_22 = $('cur-hole'); if (_el_22) _el_22.textContent = h; }
+  { const _el_23 = $('cur-par'); if (_el_23) _el_23.textContent = g.pars[h - 1]; }
+  { const _el_24 = $('cur-si'); if (_el_24) _el_24.textContent = g.sis ? g.sis[h - 1] : '—'; }
+  { const _el_25 = $('score-code'); if (_el_25) _el_25.textContent = g.code; }
+  { const _el_26 = $('last-sync'); if (_el_26) _el_26.textContent = 'synced ' + new Date(g.updatedAt).toLocaleTimeString(); }
 
   // Render game-specific banners (Banker, Wolf)
   renderGameBanners();
@@ -1938,8 +1938,8 @@ function renderScoreEntry() {
   renderP3GreenieEntry();
 
   // Hole nav
-  $('prev-hole').disabled = h === 1;
-  $('next-hole').disabled = h === 18;
+  { const _el_27 = $('prev-hole'); if (_el_27) _el_27.disabled = h === 1; }
+  { const _el_28 = $('next-hole'); if (_el_28) _el_28.disabled = h === 18; }
 
   // Auto-advance button: show when all players scored, on holes 1-17
   const allScored = g.players.every(p => g.scores[p.id] && g.scores[p.id][h - 1] != null);
@@ -2101,7 +2101,7 @@ function renderGameBanners() {
       });
     } else {
       if ($('banker-clear-pick')) {
-        $('banker-clear-pick').onclick = async () => {
+        { const _g8 = $('banker-clear-pick'); if (_g8) _g8.onclick = async () => {
           delete g.bankerData.picks[h];
           await saveGame(g);
           renderGameBanners();
@@ -2395,8 +2395,8 @@ function renderGameBanners() {
 
 function openWolfPickModal(captain, hole) {
   const g = state.game;
-  $('wolf-hole').textContent = hole;
-  $('wolf-captain').textContent = captain.name;
+  { const _el_29 = $('wolf-hole'); if (_el_29) _el_29.textContent = hole; }
+  { const _el_30 = $('wolf-captain'); if (_el_30) _el_30.textContent = captain.name; }
   const cont = $('wolf-pick-options');
   cont.innerHTML = '<div class="wolf-pick-grid"></div>';
   const grid = cont.querySelector('.wolf-pick-grid');
@@ -2419,7 +2419,7 @@ function openWolfPickModal(captain, hole) {
 function renderJunkEntry() {
   const g = state.game;
   if (!g.games.junk || Object.keys(g.games.junk).length === 0) {
-    $('junk-entry-section').innerHTML = '';
+    { const _el_31 = $('junk-entry-section'); if (_el_31) _el_31.innerHTML = ''; }
     return;
   }
   const h = state.currentHole;
@@ -2462,7 +2462,7 @@ function renderJunkEntry() {
   });
 
   html += `</div>`;
-  $('junk-entry-section').innerHTML = html;
+  { const _el_32 = $('junk-entry-section'); if (_el_32) _el_32.innerHTML = html; }
 
   $('junk-entry-section').querySelectorAll('.junk-chip').forEach(chip => {
     chip.onclick = async () => {
@@ -4135,7 +4135,7 @@ function calcP3Greenie(g) {
 function renderBoard() {
   const g = state.game;
   if (!g) return;
-  $('board-code').textContent = g.code;
+  { const _el_33 = $('board-code'); if (_el_33) _el_33.textContent = g.code; }
 
   // View-only mode UI: show finished-round banner, hide Finish round button.
   const banner = $('view-only-banner');
@@ -4663,7 +4663,7 @@ function updateActiveRoundBar() {
   if (state.game && onHome) {
     document.body.classList.add('has-active-bar');
     bar.style.display = 'block';
-    $('active-round-bar-info').innerHTML = `
+    { const _g9 = $('active-round-bar-info'); if (_g9) _g9.innerHTML = `
       <div><strong>${state.game.course}</strong> · ${state.game.players.length} players</div>
       <div style="color:var(--text-muted);font-size:11px">Code <strong style="color:var(--accent)">${state.game.code}</strong> · active round</div>
     `;
@@ -4811,11 +4811,11 @@ async function renderStats() {
 
   if (sorted.length === 0) {
     select.innerHTML = '<option value="">No players in roster yet</option>';
-    $('stats-empty-hint').style.display = 'block';
-    $('stats-empty-hint').textContent = 'Finish a round to start tracking. Players are auto-added to the roster after their first round.';
-    $('stats-kpi-card').style.display = 'none';
-    $('stats-sparkline-card').style.display = 'none';
-    $('stats-rounds-card').style.display = 'none';
+    { const _g10 = $('stats-empty-hint'); if (_g10) _g10.style.display = 'block';
+    { const _el_34 = $('stats-empty-hint'); if (_el_34) _el_34.textContent = 'Finish a round to start tracking. Players are auto-added to the roster after their first round.'; }
+    { const _g11 = $('stats-kpi-card'); if (_g11) _g11.style.display = 'none';
+    { const _g12 = $('stats-sparkline-card'); if (_g12) _g12.style.display = 'none';
+    { const _g13 = $('stats-rounds-card'); if (_g13) _g13.style.display = 'none';
     return;
   }
   // Preserve current selection if still valid; otherwise pick "me" or first
@@ -4845,49 +4845,49 @@ async function renderStatsForSelectedPlayer() {
   const history = Array.isArray(player.scoreHistory) ? player.scoreHistory : [];
 
   if (history.length === 0) {
-    $('stats-empty-hint').style.display = 'block';
-    $('stats-empty-hint').textContent = `No rounds stored yet for ${name}. Finish a round (with course rating & slope set) to start tracking.`;
-    $('stats-kpi-card').style.display = 'none';
-    $('stats-sparkline-card').style.display = 'none';
-    $('stats-rounds-card').style.display = 'none';
+    { const _g14 = $('stats-empty-hint'); if (_g14) _g14.style.display = 'block';
+    { const _el_35 = $('stats-empty-hint'); if (_el_35) _el_35.textContent = `No rounds stored yet for ${name}. Finish a round (with course rating & slope set) to start tracking.`; }
+    { const _g15 = $('stats-kpi-card'); if (_g15) _g15.style.display = 'none';
+    { const _g16 = $('stats-sparkline-card'); if (_g16) _g16.style.display = 'none';
+    { const _g17 = $('stats-rounds-card'); if (_g17) _g17.style.display = 'none';
     return;
   }
 
-  $('stats-empty-hint').style.display = 'none';
-  $('stats-kpi-card').style.display = 'block';
+  { const _g18 = $('stats-empty-hint'); if (_g18) _g18.style.display = 'none';
+  { const _g19 = $('stats-kpi-card'); if (_g19) _g19.style.display = 'block';
 
   // KPIs
   const calc = calcHandicapIndex(history);
-  $('stats-hcp').textContent = calc.index != null ? calc.index : '—';
-  $('stats-hcp-basis').textContent = calc.basis || '';
-  $('stats-rounds').textContent = history.length;
+  { const _el_36 = $('stats-hcp'); if (_el_36) _el_36.textContent = calc.index != null ? calc.index : '—'; }
+  { const _el_37 = $('stats-hcp-basis'); if (_el_37) _el_37.textContent = calc.basis || ''; }
+  { const _el_38 = $('stats-rounds'); if (_el_38) _el_38.textContent = history.length; }
   const validGross = history.filter(s => s.gross != null);
   const avgGross = validGross.length > 0
     ? Math.round(validGross.reduce((a, b) => a + b.gross, 0) / validGross.length)
     : '—';
-  $('stats-avg-gross').textContent = avgGross;
+  { const _el_39 = $('stats-avg-gross'); if (_el_39) _el_39.textContent = avgGross; }
   const validMoney = history.filter(s => typeof s.money === 'number');
   const lifetimeMoney = validMoney.reduce((a, b) => a + b.money, 0);
   if (validMoney.length === 0) {
-    $('stats-lifetime-money').textContent = '—';
-    $('stats-lifetime-money').style.color = '';
+    { const _el_40 = $('stats-lifetime-money'); if (_el_40) _el_40.textContent = '—'; }
+    { const _g20 = $('stats-lifetime-money'); if (_g20) _g20.style.color = '';
   } else {
     const sign = lifetimeMoney >= 0 ? '+' : '−';
     const abs = Math.abs(lifetimeMoney);
-    $('stats-lifetime-money').textContent = sign + '$' + abs.toFixed(2);
-    $('stats-lifetime-money').style.color = lifetimeMoney >= 0 ? 'var(--accent)' : 'var(--danger)';
+    { const _el_41 = $('stats-lifetime-money'); if (_el_41) _el_41.textContent = sign + '$' + abs.toFixed(2); }
+    { const _g21 = $('stats-lifetime-money'); if (_g21) _g21.style.color = lifetimeMoney >= 0 ? 'var(--accent)' : 'var(--danger)';
   }
 
   // Sparkline — handicap index over time
   if (history.length >= 3) {
-    $('stats-sparkline-card').style.display = 'block';
+    { const _g22 = $('stats-sparkline-card'); if (_g22) _g22.style.display = 'block';
     renderSparkline(history);
   } else {
-    $('stats-sparkline-card').style.display = 'none';
+    { const _g23 = $('stats-sparkline-card'); if (_g23) _g23.style.display = 'none';
   }
 
   // Round list
-  $('stats-rounds-card').style.display = 'block';
+  { const _g24 = $('stats-rounds-card'); if (_g24) _g24.style.display = 'block';
   const list = $('stats-rounds-list');
   list.innerHTML = '';
   // Sort newest first
@@ -5011,7 +5011,7 @@ async function loadRounds() {
   });
   if (list.lastChild) list.lastChild.style.borderBottom = 'none';
 
-  $('btn-clear-all-rounds').onclick = async () => {
+  { const _g25 = $('btn-clear-all-rounds'); if (_g25) _g25.onclick = async () => {
     if (!confirm(`Clear all ${recent.length} saved rounds? This permanently removes them from your device.`)) return;
     for (const r of recent) await deleteRecentGame(r.code);
     await loadRounds();
@@ -5098,7 +5098,7 @@ async function renderTourneyList() {
 
 function openTourneyActions(t) {
   state.activeTourneyForActions = t;
-  $('tam-name').textContent = t.name;
+  { const _el_42 = $('tam-name'); if (_el_42) _el_42.textContent = t.name; }
   const dateStr = t.date ? new Date(t.date + 'T00:00:00').toLocaleDateString(undefined, {weekday:'long', month:'long', day:'numeric'}) : 'No date';
   const playerCount = t.players ? t.players.split(',').filter(Boolean).length : 0;
   const hasFullConfig = !!t.savedConfig;
@@ -5112,20 +5112,20 @@ function openTourneyActions(t) {
   if (t.status === 'complete') {
     metaHtml += `<br><span style="color:var(--text-muted)">✓ Completed</span>`;
   }
-  $('tam-meta').innerHTML = metaHtml;
+  { const _el_43 = $('tam-meta'); if (_el_43) _el_43.innerHTML = metaHtml; }
   // Hide "Start round now" if already complete
-  $('tam-start').style.display = (t.status === 'complete') ? 'none' : '';
+  { const _g26 = $('tam-start'); if (_g26) _g26.style.display = (t.status === 'complete') ? 'none' : '';
   $('tourney-actions-modal').classList.add('show');
 }
 
 function openTourneyModal(existing) {
-  $('tourney-modal-title').textContent = existing ? 'Edit tournament' : 'New tournament';
-  $('tm-name').value = existing ? existing.name : '';
-  $('tm-date').value = existing ? existing.date || '' : '';
-  $('tm-time').value = existing ? existing.time || '' : '';
-  $('tm-course').value = existing ? existing.course || '' : '';
-  $('tm-players').value = existing ? existing.players || '' : '';
-  $('tm-notes').value = existing ? existing.notes || '' : '';
+  { const _el_44 = $('tourney-modal-title'); if (_el_44) _el_44.textContent = existing ? 'Edit tournament' : 'New tournament'; }
+  { const _el_45 = $('tm-name'); if (_el_45) _el_45.value = existing ? existing.name : ''; }
+  { const _el_46 = $('tm-date'); if (_el_46) _el_46.value = existing ? existing.date || '' : ''; }
+  { const _el_47 = $('tm-time'); if (_el_47) _el_47.value = existing ? existing.time || '' : ''; }
+  { const _el_48 = $('tm-course'); if (_el_48) _el_48.value = existing ? existing.course || '' : ''; }
+  { const _el_49 = $('tm-players'); if (_el_49) _el_49.value = existing ? existing.players || '' : ''; }
+  { const _el_50 = $('tm-notes'); if (_el_50) _el_50.value = existing ? existing.notes || '' : ''; }
   state.editingTourneyId = existing ? existing.id : null;
   $('tourney-modal').classList.add('show');
 }
@@ -5204,8 +5204,8 @@ function enterEditLiveRoundMode() {
   state.editingLiveRound = true;
 
   // Hide the no-game pickers, show the with-game form
-  $('setup-no-game').style.display = 'none';
-  $('setup-with-game').style.display = 'block';
+  { const _g27 = $('setup-no-game'); if (_g27) _g27.style.display = 'none';
+  { const _g28 = $('setup-with-game'); if (_g28) _g28.style.display = 'block';
 
   // Pre-fill the form using the existing applySavedConfig path. We pass two
   // shapes intentionally:
@@ -5232,25 +5232,25 @@ function enterEditLiveRoundMode() {
   });
 
   // Display the active code
-  $('display-code').textContent = g.code;
-  $('display-code').dataset.code = g.code;
+  { const _el_51 = $('display-code'); if (_el_51) _el_51.textContent = g.code; }
+  { const _g29 = $('display-code'); if (_g29) _g29.dataset.code = g.code;
 
   // Swap the action buttons: hide Start round + Save as tournament; show Save changes
-  $('btn-start-round').style.display = 'none';
-  $('btn-save-tourney').style.display = 'none';
-  $('btn-save-edits').style.display = '';
-  $('edit-live-banner').style.display = 'block';
-  $('btn-cancel-setup').textContent = 'Cancel edits';
+  { const _g30 = $('btn-start-round'); if (_g30) _g30.style.display = 'none';
+  { const _g31 = $('btn-save-tourney'); if (_g31) _g31.style.display = 'none';
+  { const _g32 = $('btn-save-edits'); if (_g32) _g32.style.display = '';
+  { const _g33 = $('edit-live-banner'); if (_g33) _g33.style.display = 'block';
+  { const _el_52 = $('btn-cancel-setup'); if (_el_52) _el_52.textContent = 'Cancel edits'; }
 }
 
 // Exit edit-live-round mode without saving
 function exitEditLiveRoundMode() {
   state.editingLiveRound = false;
-  $('btn-start-round').style.display = '';
-  $('btn-save-tourney').style.display = '';
-  $('btn-save-edits').style.display = 'none';
-  $('edit-live-banner').style.display = 'none';
-  $('btn-cancel-setup').textContent = 'Cancel';
+  { const _g34 = $('btn-start-round'); if (_g34) _g34.style.display = '';
+  { const _g35 = $('btn-save-tourney'); if (_g35) _g35.style.display = '';
+  { const _g36 = $('btn-save-edits'); if (_g36) _g36.style.display = 'none';
+  { const _g37 = $('edit-live-banner'); if (_g37) _g37.style.display = 'none';
+  { const _el_53 = $('btn-cancel-setup'); if (_el_53) _el_53.textContent = 'Cancel'; }
 }
 
 function enableGameTabs(yes) {
@@ -5293,51 +5293,51 @@ async function init() {
   });
 
   // Quick actions on home
-  $('btn-quick-new').onclick = () => {
+  { const _g38 = $('btn-quick-new'); if (_g38) _g38.onclick = () => {
     switchTab('setup');
     $('btn-new-game').click();
   };
-  $('btn-quick-join').onclick = () => switchTab('setup');
+  { const _el_54 = $('btn-quick-join'); if (_el_54) _el_54.onclick = () => switchTab('setup'); }
 
   // New game button
-  $('btn-new-game').onclick = () => {
+  { const _g39 = $('btn-new-game'); if (_g39) _g39.onclick = () => {
     // Defensive: if we were in live-round-edit mode, exit it before showing
     // the fresh setup form — otherwise the user sees "Save changes" instead
     // of "Start round" and the form is pre-filled with the live round's data.
     if (state.editingLiveRound) {
       exitEditLiveRoundMode();
     }
-    $('setup-no-game').style.display = 'none';
-    $('setup-with-game').style.display = 'block';
+    { const _g40 = $('setup-no-game'); if (_g40) _g40.style.display = 'none';
+    { const _g41 = $('setup-with-game'); if (_g41) _g41.style.display = 'block';
     setupNewGameForm();
     const code = generateCode();
-    $('display-code').textContent = code;
-    $('display-code').dataset.code = code;
+    { const _el_55 = $('display-code'); if (_el_55) _el_55.textContent = code; }
+    { const _g42 = $('display-code'); if (_g42) _g42.dataset.code = code;
   };
 
-  $('btn-cancel-setup').onclick = () => {
+  { const _g43 = $('btn-cancel-setup'); if (_g43) _g43.onclick = () => {
     if (state.editingLiveRound) {
       exitEditLiveRoundMode();
       switchTab('score');
       return;
     }
-    $('setup-with-game').style.display = 'none';
-    $('setup-no-game').style.display = 'block';
+    { const _g44 = $('setup-with-game'); if (_g44) _g44.style.display = 'none';
+    { const _g45 = $('setup-no-game'); if (_g45) _g45.style.display = 'block';
     state.editingTourneyId = null;
     state.pendingTourneySetup = null;
   };
 
-  $('btn-add-player').onclick = () => addPlayerRow();
-  $('btn-pick-roster').onclick = () => openRosterPicker();
+  { const _el_56 = $('btn-add-player'); if (_el_56) _el_56.onclick = () => addPlayerRow(); }
+  { const _el_57 = $('btn-pick-roster'); if (_el_57) _el_57.onclick = () => openRosterPicker(); }
 
-  $('btn-add-tee').onclick = () => {
+  { const _g46 = $('btn-add-tee'); if (_g46) _g46.onclick = () => {
     addTeeRow('', null, null);
     renderPlayerTeeSelects();
   };
 
   // Stats tab: player select dropdown + "Set as me" button
-  $('stats-player-select').onchange = () => renderStatsForSelectedPlayer();
-  $('btn-set-me').onclick = async () => {
+  { const _el_58 = $('stats-player-select'); if (_el_58) _el_58.onchange = () => renderStatsForSelectedPlayer(); }
+  { const _g47 = $('btn-set-me'); if (_g47) _g47.onclick = async () => {
     const name = $('stats-player-select').value;
     if (!name) return;
     await setMeName(name);
@@ -5346,16 +5346,16 @@ async function init() {
   };
 
   // Live slider label
-  $('hcp-pct').oninput = (e) => {
-    $('hcp-pct-label').textContent = e.target.value + '%';
+  { const _g48 = $('hcp-pct'); if (_g48) _g48.oninput = (e) => {
+    { const _el_59 = $('hcp-pct-label'); if (_el_59) _el_59.textContent = e.target.value + '%'; }
   };
 
   // Roster modal wiring
-  $('roster-cancel').onclick = () => $('roster-modal').classList.remove('show');
-  $('roster-modal').onclick = (e) => {
+  { const _el_60 = $('roster-cancel'); if (_el_60) _el_60.onclick = () => $('roster-modal').classList.remove('show'); }
+  { const _g49 = $('roster-modal'); if (_g49) _g49.onclick = (e) => {
     if (e.target.id === 'roster-modal') $('roster-modal').classList.remove('show');
   };
-  $('roster-search').oninput = () => renderRosterList();
+  { const _el_61 = $('roster-search'); if (_el_61) _el_61.oninput = () => renderRosterList(); }
 
   // Par presets
   document.querySelectorAll('[data-preset]').forEach(btn => {
@@ -5365,7 +5365,7 @@ async function init() {
       $('par-grid').querySelectorAll('input').forEach((inp, i) => inp.value = pars[i]);
     };
   });
-  $('btn-default-si').onclick = () => {
+  { const _g50 = $('btn-default-si'); if (_g50) _g50.onclick = () => {
     $('si-grid').querySelectorAll('input').forEach((inp, i) => inp.value = DEFAULT_SI[i]);
   };
 
@@ -5386,12 +5386,12 @@ async function init() {
   });
 
   // "+ Add another match/nassau" buttons
-  $('btn-add-match-instance').onclick = () => {
+  { const _g51 = $('btn-add-match-instance'); if (_g51) _g51.onclick = () => {
     if (!Array.isArray(state.matchInstances)) state.matchInstances = [];
     state.matchInstances.push({ value: 5, net: true, pair: [] });
     renderMatchInstances();
   };
-  $('btn-add-nassau-instance').onclick = () => {
+  { const _g52 = $('btn-add-nassau-instance'); if (_g52) _g52.onclick = () => {
     if (!Array.isArray(state.nassauInstances)) state.nassauInstances = [];
     state.nassauInstances.push({
       value: 5, format: 'stroke', allowHuckle: true,
@@ -5401,7 +5401,7 @@ async function init() {
   };
 
   // Start round
-  $('btn-start-round').onclick = async () => {
+  { const _g53 = $('btn-start-round'); if (_g53) _g53.onclick = async () => {
     const setup = gatherSetup();
     if (!setup) return;
     const code = $('display-code').dataset.code || generateCode();
@@ -5469,8 +5469,8 @@ async function init() {
     }
 
     enableGameTabs(true);
-    $('setup-with-game').style.display = 'none';
-    $('setup-no-game').style.display = 'block';
+    { const _g54 = $('setup-with-game'); if (_g54) _g54.style.display = 'none';
+    { const _g55 = $('setup-no-game'); if (_g55) _g55.style.display = 'block';
     switchTab('score');
     showToast('Round started — code ' + code);
   };
@@ -5478,7 +5478,7 @@ async function init() {
   // Save edits to the active round — applies new game config retroactively.
   // Pars/SIs/handicap rules are also editable; player roster stays as-is to
   // avoid breaking score history.
-  $('btn-save-edits').onclick = async () => {
+  { const _g56 = $('btn-save-edits'); if (_g56) _g56.onclick = async () => {
     const g = state.game;
     if (!g) {
       showToast('No active round to edit');
@@ -5524,7 +5524,7 @@ async function init() {
   };
 
   // Save the current setup as a tournament for later
-  $('btn-save-tourney').onclick = () => {
+  { const _g57 = $('btn-save-tourney'); if (_g57) _g57.onclick = () => {
     const setup = gatherSetup();
     if (!setup) return; // gatherSetup shows its own toast on validation errors
     // Stash the gathered setup so the modal save handler can use it
@@ -5533,35 +5533,35 @@ async function init() {
     const editing = state.editingTourneyId
       ? null  // we'll look it up async below
       : null;
-    $('stm-name').value = '';
-    $('stm-date').value = '';
-    $('stm-time').value = '';
-    $('stm-notes').value = '';
+    { const _el_62 = $('stm-name'); if (_el_62) _el_62.value = ''; }
+    { const _el_63 = $('stm-date'); if (_el_63) _el_63.value = ''; }
+    { const _el_64 = $('stm-time'); if (_el_64) _el_64.value = ''; }
+    { const _el_65 = $('stm-notes'); if (_el_65) _el_65.value = ''; }
     if (state.editingTourneyId) {
       // Look up the existing tournament to prefill name/date
       getTourneys().then(list => {
         const t = list.find(x => x.id === state.editingTourneyId);
         if (t) {
-          $('stm-name').value = t.name || '';
-          $('stm-date').value = t.date || '';
-          $('stm-time').value = t.time || '';
-          $('stm-notes').value = t.notes || '';
+          { const _el_66 = $('stm-name'); if (_el_66) _el_66.value = t.name || ''; }
+          { const _el_67 = $('stm-date'); if (_el_67) _el_67.value = t.date || ''; }
+          { const _el_68 = $('stm-time'); if (_el_68) _el_68.value = t.time || ''; }
+          { const _el_69 = $('stm-notes'); if (_el_69) _el_69.value = t.notes || ''; }
         }
       });
     }
     $('save-tourney-modal').classList.add('show');
   };
 
-  $('stm-cancel').onclick = () => {
+  { const _g58 = $('stm-cancel'); if (_g58) _g58.onclick = () => {
     $('save-tourney-modal').classList.remove('show');
     state.pendingTourneySetup = null;
   };
 
-  $('save-tourney-modal').onclick = (e) => {
+  { const _g59 = $('save-tourney-modal'); if (_g59) _g59.onclick = (e) => {
     if (e.target.id === 'save-tourney-modal') $('save-tourney-modal').classList.remove('show');
   };
 
-  $('stm-save').onclick = async () => {
+  { const _g60 = $('stm-save'); if (_g60) _g60.onclick = async () => {
     const name = $('stm-name').value.trim();
     if (!name) { showToast('Tournament name required'); return; }
     const setup = state.pendingTourneySetup;
@@ -5645,14 +5645,14 @@ async function init() {
     state.pendingTourneySetup = null;
     state.editingTourneyId = null;
     $('save-tourney-modal').classList.remove('show');
-    $('setup-with-game').style.display = 'none';
-    $('setup-no-game').style.display = 'block';
+    { const _g61 = $('setup-with-game'); if (_g61) _g61.style.display = 'none';
+    { const _g62 = $('setup-no-game'); if (_g62) _g62.style.display = 'block';
     switchTab('tourneys');
     showToast('Tournament saved');
   };
 
   // Join existing
-  $('btn-join-game').onclick = async () => {
+  { const _g63 = $('btn-join-game'); if (_g63) _g63.onclick = async () => {
     const code = $('join-code').value.trim().toUpperCase();
     if (!code) { showToast('Enter a code'); return; }
     const g = await loadGame(code);
@@ -5666,15 +5666,15 @@ async function init() {
   };
 
   // Hole nav
-  $('prev-hole').onclick = () => {
+  { const _g64 = $('prev-hole'); if (_g64) _g64.onclick = () => {
     if (state.currentHole > 1) { state.currentHole--; renderScoreEntry(); }
   };
-  $('next-hole').onclick = () => {
+  { const _g65 = $('next-hole'); if (_g65) _g65.onclick = () => {
     if (state.currentHole < 18) { state.currentHole++; renderScoreEntry(); }
   };
 
   // Auto-advance button
-  $('auto-advance-btn').onclick = () => {
+  { const _g66 = $('auto-advance-btn'); if (_g66) _g66.onclick = () => {
     if (state.currentHole < 18) {
       state.currentHole++;
       renderScoreEntry();
@@ -5682,7 +5682,7 @@ async function init() {
     }
   };
 
-  $('btn-refresh').onclick = async () => {
+  { const _g67 = $('btn-refresh'); if (_g67) _g67.onclick = async () => {
     if (!state.game) return;
     const fresh = await loadGame(state.game.code);
     if (fresh) {
@@ -5692,10 +5692,10 @@ async function init() {
     }
   };
 
-  $('btn-end-round').onclick = () => switchTab('board');
-  $('btn-back-score').onclick = () => switchTab('score');
+  { const _el_70 = $('btn-end-round'); if (_el_70) _el_70.onclick = () => switchTab('board'); }
+  { const _el_71 = $('btn-back-score'); if (_el_71) _el_71.onclick = () => switchTab('score'); }
 
-  $('btn-end-early').onclick = () => {
+  { const _g68 = $('btn-end-early'); if (_g68) _g68.onclick = () => {
     const g = state.game;
     if (!g) return;
     // On hole 18 with all scored, this button becomes a Finish round shortcut —
@@ -5717,7 +5717,7 @@ async function init() {
     switchTab('board');
   };
 
-  $('btn-finish-round').onclick = async () => {
+  { const _g69 = $('btn-finish-round'); if (_g69) _g69.onclick = async () => {
     const g = state.game;
     if (!g) {
       showToast('No active round to finish');
@@ -5729,14 +5729,14 @@ async function init() {
     for (let h = 0; h < 18; h++) {
       if (g.players.some(p => g.scores[p.id] && g.scores[p.id][h] != null)) holesCompleted++;
     }
-    $('summary-subtitle').innerHTML = `<strong>${g.course}</strong> · ${dateStr} · ${holesCompleted}/18 holes · Code <strong style="color:var(--accent)">${g.code}</strong>`;
+    { const _el_72 = $('summary-subtitle'); if (_el_72) _el_72.innerHTML = `<strong>${g.course}</strong> · ${dateStr} · ${holesCompleted}/18 holes · Code <strong style="color:var(--accent)">${g.code}</strong>`; }
     // Build summary defensively — if any calc throws, fall back to a basic message
     // so the user can still tap Save & return home and not get stuck.
     try {
-      $('summary-content').innerHTML = buildRoundSummary(g);
+      { const _el_73 = $('summary-content'); if (_el_73) _el_73.innerHTML = buildRoundSummary(g); }
     } catch (err) {
       console.error('buildRoundSummary failed:', err);
-      $('summary-content').innerHTML = `<div class="help-text" style="padding:20px;text-align:center">
+      { const _g70 = $('summary-content'); if (_g70) _g70.innerHTML = `<div class="help-text" style="padding:20px;text-align:center">
         <strong style="color:var(--warn)">Couldn't build the full summary.</strong><br>
         ${holesCompleted} of 18 holes scored.<br>
         You can still save the round below — full data is preserved.
@@ -5747,7 +5747,7 @@ async function init() {
 
   // Reopen a finished round — clears finishedAt and exits view-only mode so
   // the user can edit scores/settings (e.g., to fix a typo or add a forgotten junk).
-  $('btn-reopen-round').onclick = async () => {
+  { const _g71 = $('btn-reopen-round'); if (_g71) _g71.onclick = async () => {
     const g = state.game;
     if (!g || !state.viewOnlyMode) return;
     if (!confirm('This will reactivate the round so you can make edits. Are you sure?')) return;
@@ -5759,12 +5759,12 @@ async function init() {
   };
 
   // Summary modal: "Back to board" — just close
-  $('summary-back').onclick = () => {
+  { const _g72 = $('summary-back'); if (_g72) _g72.onclick = () => {
     $('summary-modal').classList.remove('show');
   };
 
   // Summary modal: "Save & return home" — archive the round and go home
-  $('summary-confirm').onclick = async () => {
+  { const _g73 = $('summary-confirm'); if (_g73) _g73.onclick = async () => {
     const g = state.game;
     if (g) {
       // Mark the round as finished — this is the durable signal for view-only mode
@@ -5801,7 +5801,7 @@ async function init() {
   };
 
   // Tap outside the summary modal to close (treats as "back to board")
-  $('summary-modal').onclick = (e) => {
+  { const _g74 = $('summary-modal'); if (_g74) _g74.onclick = (e) => {
     if (e.target.id === 'summary-modal') $('summary-modal').classList.remove('show');
   };
 
@@ -5809,24 +5809,24 @@ async function init() {
   // "+ New tournament" now goes straight to the setup form (in tournament mode)
   // so users build the full config there. The lightweight modal still exists
   // for editing basic details.
-  $('btn-new-tourney').onclick = () => {
+  { const _g75 = $('btn-new-tourney'); if (_g75) _g75.onclick = () => {
     state.editingTourneyId = null;
     state.pendingTourneySetup = null;
-    $('setup-no-game').style.display = 'none';
-    $('setup-with-game').style.display = 'block';
+    { const _g76 = $('setup-no-game'); if (_g76) _g76.style.display = 'none';
+    { const _g77 = $('setup-with-game'); if (_g77) _g77.style.display = 'block';
     setupNewGameForm();
     const code = generateCode();
-    $('display-code').textContent = code;
-    $('display-code').dataset.code = code;
+    { const _el_74 = $('display-code'); if (_el_74) _el_74.textContent = code; }
+    { const _g78 = $('display-code'); if (_g78) _g78.dataset.code = code;
     switchTab('setup');
     showToast('Set everything up, then tap "Save as tournament"');
   };
-  $('tm-cancel').onclick = () => {
+  { const _g79 = $('tm-cancel'); if (_g79) _g79.onclick = () => {
     $('tourney-modal').classList.remove('show');
     state.editingTourneyId = null;
   };
-  $('tm-save').onclick = saveTourney;
-  $('tourney-modal').onclick = (e) => {
+  { const _el_75 = $('tm-save'); if (_el_75) _el_75.onclick = saveTourney; }
+  { const _g80 = $('tourney-modal'); if (_g80) _g80.onclick = (e) => {
     if (e.target.id === 'tourney-modal') {
       $('tourney-modal').classList.remove('show');
       state.editingTourneyId = null;
@@ -5834,17 +5834,17 @@ async function init() {
   };
 
   // Tournament action sheet handlers
-  $('tam-cancel').onclick = () => {
+  { const _g81 = $('tam-cancel'); if (_g81) _g81.onclick = () => {
     $('tourney-actions-modal').classList.remove('show');
     state.activeTourneyForActions = null;
   };
-  $('tourney-actions-modal').onclick = (e) => {
+  { const _g82 = $('tourney-actions-modal'); if (_g82) _g82.onclick = (e) => {
     if (e.target.id === 'tourney-actions-modal') {
       $('tourney-actions-modal').classList.remove('show');
       state.activeTourneyForActions = null;
     }
   };
-  $('tam-start').onclick = async () => {
+  { const _g83 = $('tam-start'); if (_g83) _g83.onclick = async () => {
     const t = state.activeTourneyForActions;
     if (!t) return;
     $('tourney-actions-modal').classList.remove('show');
@@ -5864,11 +5864,11 @@ async function init() {
     }
 
     // Otherwise, open the setup form pre-filled from the saved config (if any)
-    $('setup-no-game').style.display = 'none';
-    $('setup-with-game').style.display = 'block';
+    { const _g84 = $('setup-no-game'); if (_g84) _g84.style.display = 'none';
+    { const _g85 = $('setup-with-game'); if (_g85) _g85.style.display = 'block';
     const code = generateCode();
-    $('display-code').textContent = code;
-    $('display-code').dataset.code = code;
+    { const _el_76 = $('display-code'); if (_el_76) _el_76.textContent = code; }
+    { const _g86 = $('display-code'); if (_g86) _g86.dataset.code = code;
 
     const dateStr = t.date ? new Date(t.date + 'T00:00:00').toLocaleDateString(undefined, {weekday:'long', month:'long', day:'numeric'}) : '';
     // Build prefill: prefer the saved full config if present, else fall back
@@ -5894,13 +5894,13 @@ async function init() {
     switchTab('setup');
     showToast(t.savedConfig ? 'Loaded — review and tap Start round' : 'Fill in the setup, then start');
   };
-  $('tam-edit').onclick = () => {
+  { const _g87 = $('tam-edit'); if (_g87) _g87.onclick = () => {
     const t = state.activeTourneyForActions;
     if (!t) return;
     $('tourney-actions-modal').classList.remove('show');
     openTourneyModal(t);
   };
-  $('tam-delete').onclick = async () => {
+  { const _g88 = $('tam-delete'); if (_g88) _g88.onclick = async () => {
     const t = state.activeTourneyForActions;
     if (!t) return;
     if (!confirm(`Delete "${t.name}"? This won't delete any in-progress round.`)) return;
@@ -5911,14 +5911,14 @@ async function init() {
   };
 
   // Wolf modal
-  $('wolf-cancel').onclick = () => $('wolf-modal').classList.remove('show');
-  $('wolf-modal').onclick = (e) => {
+  { const _el_77 = $('wolf-cancel'); if (_el_77) _el_77.onclick = () => $('wolf-modal').classList.remove('show'); }
+  { const _g89 = $('wolf-modal'); if (_g89) _g89.onclick = (e) => {
     if (e.target.id === 'wolf-modal') $('wolf-modal').classList.remove('show');
   };
 
   // Huckle modal
-  $('huckle-cancel').onclick = () => $('huckle-modal').classList.remove('show');
-  $('huckle-modal').onclick = (e) => {
+  { const _el_78 = $('huckle-cancel'); if (_el_78) _el_78.onclick = () => $('huckle-modal').classList.remove('show'); }
+  { const _g90 = $('huckle-modal'); if (_g90) _g90.onclick = (e) => {
     if (e.target.id === 'huckle-modal') $('huckle-modal').classList.remove('show');
   };
 
@@ -5940,8 +5940,8 @@ async function init() {
   await tryRestore();
   await renderHome();
 
-  $('loading').style.display = 'none';
-  $('main').style.display = 'block';
+  { const _g91 = $('loading'); if (_g91) _g91.style.display = 'none';
+  { const _g92 = $('main'); if (_g92) _g92.style.display = 'block';
 }
 
 async function tryRestore() {
