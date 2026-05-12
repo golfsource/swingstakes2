@@ -1,0 +1,6032 @@
+// ============================================================
+// STATE
+// ============================================================
+let state = {
+  game: null,
+  currentHole: 1,
+  editingTourneyId: null,
+  pendingTourneySetup: null,
+  activeTourneyForActions: null,
+  editingLiveRound: false,
+  viewOnlyMode: false,
+  gameParticipants: {},
+  playerTees: {},
+  matchInstances: [],
+  nassauInstances: []
+};
+
+// ============================================================
+// CONSTANTS
+// ============================================================
+const STANDARD_PARS = [4,4,3,5,4,4,3,4,5, 4,5,3,4,4,4,3,4,5];
+const PAR70 = [4,4,3,5,4,4,3,4,4, 4,4,3,4,4,4,3,4,5];
+const PAR71 = [4,4,3,5,4,4,3,4,4, 4,5,3,4,4,4,3,4,5];
+const DEFAULT_SI = [7,3,15,11,1,17,9,13,5, 8,4,16,12,2,18,10,14,6];
+
+// Course library — pre-loaded names; scorecard data filled in by your group on first play
+const COURSE_LIBRARY = [
+  { id: 'buffalo-creek', name: 'Buffalo Creek Golf Club', city: 'Rockwall, TX' },
+  { id: 'rockwall-gac', name: 'Rockwall Golf & Athletic Club', city: 'Rockwall, TX' },
+  { id: 'lakeside-village', name: 'Lakeside Village Golf Club', city: 'Rockwall, TX', note: '9-hole par 3' },
+  { id: 'shores', name: 'The Shores Country Club', city: 'Rockwall, TX' },
+  { id: 'waterview', name: 'Waterview Golf Club', city: 'Rowlett, TX' },
+  { id: 'stone-river', name: 'Stone River Golf Club', city: 'Royse City, TX' },
+  { id: 'woodbridge', name: 'Woodbridge Golf Club', city: 'Wylie, TX' },
+  { id: 'mesquite-gc', name: 'Mesquite Golf Club', city: 'Mesquite, TX' },
+  { id: 'duck-creek', name: 'Duck Creek Golf Club', city: 'Garland, TX' },
+  { id: 'firewheel-bridges', name: 'Firewheel - Bridges Course', city: 'Garland, TX' },
+  { id: 'firewheel-old', name: 'Firewheel - Old Course', city: 'Garland, TX' },
+  { id: 'firewheel-lakes', name: 'Firewheel - Lakes Course', city: 'Garland, TX' },
+  { id: 'sherrill-park-1', name: 'Sherrill Park Course #1', city: 'Richardson, TX' },
+  { id: 'sherrill-park-2', name: 'Sherrill Park Course #2', city: 'Richardson, TX' },
+  { id: 'twin-creeks', name: 'The Golf Club at Twin Creeks', city: 'Allen, TX' },
+  { id: 'pecan-hollow', name: 'Pecan Hollow Golf Course', city: 'Plano, TX' },
+  { id: 'ridgeview-ranch', name: 'Ridgeview Ranch Golf Course', city: 'Plano, TX' },
+  { id: 'watters-creek', name: 'The Courses at Watters Creek', city: 'Plano, TX' },
+  { id: 'wright-park', name: 'Wright Park Municipal', city: 'Greenville, TX', note: '9-hole' },
+  { id: 'oaks-cc', name: 'The Oaks Country Club', city: 'Greenville, TX' },
+  { id: 'country-view', name: 'Country View Golf Club', city: 'Lancaster, TX' }
+];
+
+const JUNK_TYPES = [
+  { id: 'gir',     name: 'GIR',     desc: 'Green in Regulation — reach the green in (par − 2) shots on any hole', defaultVal: 1 },
+  { id: 'sandy',   name: 'Sandy',   desc: 'Par after being in a bunker', defaultVal: 1 },
+  { id: 'barkie',  name: 'Barkie',  desc: 'Par after hitting a tree', defaultVal: 1 },
+  { id: 'polie',   name: 'Polie',   desc: 'Long putt made (10+ feet)', defaultVal: 1 },
+  { id: 'snake',   name: 'Snake',   desc: '3-putt — passed to next 3-putter', defaultVal: 0.5 },
+  { id: 'arnie',   name: 'Arnie',   desc: 'Par without hitting fairway or GIR', defaultVal: 1 },
+  { id: 'chipin',  name: 'Chip-In', desc: 'Chip in off the green for par or better', defaultVal: 1 }
+];
+
+// ============================================================
+// STORAGE
+// ============================================================
+const KEY_LAST = 'golf:last-game';
+const KEY_RECENT = 'golf:recent-games';
+const KEY_TOURNEYS = 'golf:tourneys';
+const KEY_COURSE_DATA = 'golf:courses';
+const KEY_PLAYER_ROSTER = 'golf:player-roster';
+
+// ============================================================
+// SUPABASE BACKEND
+// ============================================================
+// Shared keys (game state, course library) go to Supabase so all phones see
+// live updates. Personal keys (player roster, recent rounds, last game,
+// tournaments) stay in localStorage on each device.
+// ============================================================
+
+const SUPABASE_URL = 'https://kkpiapntmspobhcvpdia.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtrcGlhcG50bXNwb2JoY3ZwZGlhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzg1NDIwNDAsImV4cCI6MjA5NDExODA0MH0.SrxdsGZzQfonpVlJLG-W0EIMga32ZWhXPZ_Q_Q1d5go';
+let supa = null;            // Supabase client, set after CDN load
+let supaReady = false;      // True once the client is initialized
+let supaOnline = navigator.onLine; // Tracks network state for sync indicator
+let activeRealtimeSub = null; // Current realtime subscription, if any
+
+// Initialize the Supabase client. Loads the CDN script if not already present.
+async function initSupabase() {
+  if (supaReady) return supa;
+  try {
+    if (typeof window.supabase === 'undefined') {
+      // Load Supabase JS client from CDN
+      await new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js';
+        script.onload = resolve;
+        script.onerror = reject;
+        document.head.appendChild(script);
+      });
+    }
+    supa = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      realtime: { params: { eventsPerSecond: 5 } }
+    });
+    supaReady = true;
+    return supa;
+  } catch (e) {
+    console.error('Supabase init failed:', e);
+    return null;
+  }
+}
+
+// Determine if a key is "shared" (lives in Supabase) or "personal" (localStorage).
+// Shared keys are visible to everyone in the group; personal keys stay on each device.
+function isSharedKey(key) {
+  return key.startsWith('game:') || SHARED_SINGLETONS.includes(key);
+}
+
+// Shared "singleton" keys — stored as one row each in the games table under a
+// reserved code prefix (shared:). The recent-rounds list lives here so all
+// devices see the same finished rounds. Same pattern for the course library.
+const SHARED_SINGLETONS = ['golf:courses', 'golf:recent-games', 'golf:tourneys'];
+function singletonRowCode(key) { return 'shared:' + key.replace(/^golf:/, ''); }
+
+// Track online/offline so the sync indicator can reflect reality
+window.addEventListener('online', () => { supaOnline = true; updateSyncIndicator(); });
+window.addEventListener('offline', () => { supaOnline = false; updateSyncIndicator(); });
+
+// Read a shared singleton (courses, recent-games list) from Supabase with
+// localStorage cache fallback. Returns the JSON string, or null if not found.
+async function readSharedSingleton(key) {
+  const rowCode = singletonRowCode(key);
+  try {
+    if (!supaReady) await initSupabase();
+    if (supa && supaOnline) {
+      const { data, error } = await supa
+        .from('games')
+        .select('data')
+        .eq('code', rowCode)
+        .maybeSingle();
+      if (!error && data && data.data) {
+        const json = JSON.stringify(data.data);
+        try { localStorage.setItem(key, json); } catch (e) {}
+        return json;
+      }
+    }
+  } catch (e) {
+    console.warn('Supabase singleton read failed (' + key + '):', e);
+  }
+  try { return localStorage.getItem(key) || null; } catch (e) { return null; }
+}
+
+// Write a shared singleton to Supabase (and cache locally).
+async function writeSharedSingleton(key, value) {
+  try {
+    if (!supaReady) await initSupabase();
+    if (supa && supaOnline) {
+      const parsed = JSON.parse(value);
+      await supa
+        .from('games')
+        .upsert({ code: singletonRowCode(key), data: parsed, updated_at: new Date().toISOString() });
+    }
+  } catch (e) {
+    console.warn('Supabase singleton write failed (' + key + '):', e);
+  }
+}
+
+// Storage shim: routes shared keys to Supabase (with localStorage cache as
+// fallback) and personal keys to localStorage only.
+async function safeGet(key, shared) {
+  // Personal keys: localStorage only
+  if (!shared && !isSharedKey(key)) {
+    try { return localStorage.getItem(key) || null; } catch (e) { return null; }
+  }
+
+  // Per-game data: one row per code
+  if (key.startsWith('game:')) {
+    const code = key.slice(5);
+    try {
+      if (!supaReady) await initSupabase();
+      if (supa && supaOnline) {
+        const { data, error } = await supa
+          .from('games')
+          .select('data')
+          .eq('code', code)
+          .maybeSingle();
+        if (!error && data && data.data) {
+          const json = JSON.stringify(data.data);
+          try { localStorage.setItem(key, json); } catch (e) {}
+          return json;
+        }
+      }
+    } catch (e) {
+      console.warn('Supabase read failed, using cache:', e);
+    }
+    try { return localStorage.getItem(key) || null; } catch (e) { return null; }
+  }
+
+  // Shared singletons (courses, recent-games)
+  if (SHARED_SINGLETONS.includes(key)) {
+    return await readSharedSingleton(key);
+  }
+
+  // Default fallback
+  try { return localStorage.getItem(key) || null; } catch (e) { return null; }
+}
+
+async function safeSet(key, value, shared) {
+  // Always cache locally first — works offline + provides instant local read
+  try { localStorage.setItem(key, value); } catch (e) {}
+
+  // Personal keys: localStorage only
+  if (!shared && !isSharedKey(key)) return true;
+
+  // Shared keys: also push to Supabase
+  if (key.startsWith('game:')) {
+    const code = key.slice(5);
+    try {
+      if (!supaReady) await initSupabase();
+      if (supa && supaOnline) {
+        const parsed = JSON.parse(value);
+        const { error } = await supa
+          .from('games')
+          .upsert({ code, data: parsed, updated_at: new Date().toISOString() });
+        if (error) {
+          console.warn('Supabase write failed:', error);
+          updateSyncIndicator(false);
+        } else {
+          updateSyncIndicator(true);
+        }
+      } else {
+        updateSyncIndicator(false);
+      }
+    } catch (e) {
+      console.warn('Supabase write error:', e);
+      updateSyncIndicator(false);
+    }
+    return true;
+  }
+
+  if (SHARED_SINGLETONS.includes(key)) {
+    await writeSharedSingleton(key, value);
+    return true;
+  }
+
+  return true;
+}
+
+// Subscribe to realtime updates for a specific game code. When another phone
+// edits the game, our local state.game refreshes and the visible screen redraws.
+function subscribeToGame(code) {
+  unsubscribeFromGame(); // Clean up any existing subscription
+  if (!supa || !code) return;
+
+  activeRealtimeSub = supa
+    .channel('game-' + code)
+    .on('postgres_changes',
+      { event: '*', schema: 'public', table: 'games', filter: 'code=eq.' + code },
+      async (payload) => {
+        if (!payload.new || !payload.new.data) return;
+        // Don't overwrite if we're currently editing locally — avoid input flicker
+        const incoming = payload.new.data;
+        // If we don't have an active game or codes don't match, ignore
+        if (!state.game || state.game.code !== code) return;
+        // Don't clobber if the incoming version is older than what we have
+        if (incoming.updatedAt && state.game.updatedAt && incoming.updatedAt < state.game.updatedAt) return;
+
+        state.game = incoming;
+        // Cache the fresh copy locally
+        try { localStorage.setItem('game:' + code, JSON.stringify(incoming)); } catch (e) {}
+
+        // Refresh whichever screen is active — but skip if user is mid-edit on an input
+        const focused = document.activeElement;
+        const isEditing = focused && (focused.tagName === 'INPUT' || focused.tagName === 'SELECT' || focused.tagName === 'TEXTAREA');
+        if (isEditing) return;
+
+        const onScore = document.getElementById('panel-score').classList.contains('active');
+        const onBoard = document.getElementById('panel-board').classList.contains('active');
+        if (onScore) renderScoreEntry();
+        else if (onBoard) renderBoard();
+      }
+    )
+    .subscribe();
+}
+
+function unsubscribeFromGame() {
+  if (activeRealtimeSub && supa) {
+    try { supa.removeChannel(activeRealtimeSub); } catch (e) {}
+    activeRealtimeSub = null;
+  }
+}
+
+// Update the small sync indicator dot (added to the UI separately)
+function updateSyncIndicator(justSynced) {
+  const dot = document.getElementById('sync-indicator');
+  if (!dot) return;
+  if (!supaOnline) {
+    dot.style.background = 'var(--danger)';
+    dot.title = 'Offline — changes save locally and will sync when you reconnect';
+  } else if (justSynced === false) {
+    dot.style.background = 'var(--warn)';
+    dot.title = 'Sync error — check connection';
+  } else {
+    dot.style.background = 'var(--accent)';
+    dot.title = 'Synced — buddies with the code see updates live';
+    if (justSynced === true) {
+      // Brief pulse animation to signal recent sync
+      dot.style.transform = 'scale(1.3)';
+      setTimeout(() => { dot.style.transform = 'scale(1)'; }, 200);
+    }
+  }
+}
+
+async function saveGame(game) {
+  game.updatedAt = Date.now();
+  const ok = await safeSet('game:' + game.code, JSON.stringify(game), true);
+  if (ok) {
+    await safeSet(KEY_LAST, game.code, false);
+    await addToRecent(game);
+  }
+  return ok;
+}
+
+async function loadGame(code) {
+  const v = await safeGet('game:' + code, true);
+  if (!v) return null;
+  const g = JSON.parse(v);
+  migrateLegacyData(g);
+  return g;
+}
+
+// One-time migration of legacy field names so old rounds still work.
+// Currently handles: junk 'greenie' → 'gir' (renamed because Greenie now means
+// the par-3 greenie game, not the GIR junk side bet).
+function migrateLegacyData(g) {
+  if (!g) return;
+  // Migrate junk game config: games.junk.greenie → games.junk.gir
+  if (g.games && g.games.junk && g.games.junk.greenie !== undefined && g.games.junk.gir === undefined) {
+    g.games.junk.gir = g.games.junk.greenie;
+    delete g.games.junk.greenie;
+  }
+  // Migrate per-hole junk earner data: junkData[h].greenie → junkData[h].gir
+  if (g.junkData) {
+    Object.keys(g.junkData).forEach(h => {
+      const hd = g.junkData[h];
+      if (hd && hd.greenie !== undefined && hd.gir === undefined) {
+        hd.gir = hd.greenie;
+        delete hd.greenie;
+      }
+    });
+  }
+}
+
+async function addToRecent(game) {
+  let recent = [];
+  const v = await safeGet(KEY_RECENT, true);
+  if (v) try { recent = JSON.parse(v); } catch (e) {}
+  recent = recent.filter(g => g.code !== game.code);
+  recent.unshift({
+    code: game.code,
+    course: game.course || 'Untitled course',
+    players: game.players.map(p => p.name).join(', '),
+    updatedAt: game.updatedAt
+  });
+  recent = recent.slice(0, 10);
+  await safeSet(KEY_RECENT, JSON.stringify(recent), true);
+}
+
+async function getRecent() {
+  const v = await safeGet(KEY_RECENT, true);
+  if (!v) return [];
+  try { return JSON.parse(v); } catch (e) { return []; }
+}
+
+async function getLastGameCode() {
+  return await safeGet(KEY_LAST, false);
+}
+
+async function getTourneys() {
+  const v = await safeGet(KEY_TOURNEYS, true);
+  if (!v) return [];
+  try { return JSON.parse(v); } catch (e) { return []; }
+}
+
+async function saveTourneys(list) {
+  return await safeSet(KEY_TOURNEYS, JSON.stringify(list), true);
+}
+
+// Course scorecards saved by the group (shared)
+async function getCourseSaves() {
+  const v = await safeGet(KEY_COURSE_DATA, true);
+  if (!v) return {};
+  try { return JSON.parse(v); } catch (e) { return {}; }
+}
+
+// Player roster — names + handicaps remembered between rounds (personal/local)
+async function getPlayerRoster() {
+  const v = await safeGet(KEY_PLAYER_ROSTER, false);
+  if (!v) return [];
+  try { return JSON.parse(v); } catch (e) { return []; }
+}
+
+async function savePlayerRoster(roster) {
+  return await safeSet(KEY_PLAYER_ROSTER, JSON.stringify(roster), false);
+}
+
+// Add or update a player in the roster (case-insensitive name match)
+async function upsertPlayerInRoster(name, hcp) {
+  if (!name || !name.trim()) return;
+  const trimmed = name.trim();
+  const roster = await getPlayerRoster();
+  const lower = trimmed.toLowerCase();
+  const idx = roster.findIndex(p => p.name.toLowerCase() === lower);
+  if (idx >= 0) {
+    // Update HCP & last-used timestamp
+    roster[idx].hcp = hcp;
+    roster[idx].lastUsed = Date.now();
+  } else {
+    roster.push({ name: trimmed, hcp: hcp || 0, lastUsed: Date.now() });
+  }
+  // Sort by most-recently-used
+  roster.sort((a, b) => (b.lastUsed || 0) - (a.lastUsed || 0));
+  // Cap at 50 to keep it manageable
+  await savePlayerRoster(roster.slice(0, 50));
+}
+
+async function deletePlayerFromRoster(name) {
+  const roster = await getPlayerRoster();
+  const filtered = roster.filter(p => p.name.toLowerCase() !== name.toLowerCase());
+  await savePlayerRoster(filtered);
+}
+
+// Append a single round's scores to each player's history in the roster.
+// Called when a round is finalized via the Save & return home button.
+// Players matched by name (case-insensitive). New players created if not in roster.
+// Each player uses their own tee's rating/slope. Players without a tee, or
+// rounds with incomplete 18-hole scoring, are silently skipped.
+async function archiveScoresFromRound(g) {
+  if (!g || !g.players || !g.scores) return;
+  const date = g.createdAt || Date.now();
+
+  // Resolve tee map by label. Backwards compat: if g.tees is empty/missing
+  // but g has the old g.rating/g.slope, treat as one tee 'Back'.
+  let teeMap = {};
+  if (Array.isArray(g.tees) && g.tees.length > 0) {
+    g.tees.forEach(t => { if (t.label) teeMap[t.label] = t; });
+  } else if (g.rating != null && g.slope != null) {
+    teeMap['Back'] = { label: 'Back', rating: g.rating, slope: g.slope };
+  }
+
+  // Compute per-player money totals (best-effort — rolls up all calc'd games).
+  let moneyTotals = {};
+  try {
+    const games = [
+      calcSkins(g), calcNassau(g), calcStroke(g), calcBanker(g),
+      calcVegas(g), calcDynamicVegas(g), calcSixes(g), calcWolf(g),
+      calcMatch(g), calcTeamMatch(g), calcTeamLowball(g),
+      calcP3Greenie(g), calcJunk(g)
+    ];
+    g.players.forEach(p => moneyTotals[p.id] = 0);
+    games.forEach(r => {
+      if (r && r.money) g.players.forEach(p => moneyTotals[p.id] += (r.money[p.id] || 0));
+    });
+  } catch (e) { console.warn('archive: money calc failed', e); }
+
+  const roster = await getPlayerRoster();
+  let changed = false;
+
+  g.players.forEach(p => {
+    const arr = g.scores[p.id] || [];
+    if (arr.filter(s => s != null).length < 18) return; // skip incomplete rounds
+    const gross = arr.reduce((a, b) => a + (b || 0), 0);
+
+    // Use this player's tee — silently skip handicap part if missing
+    const tee = p.teeLabel ? teeMap[p.teeLabel] : (Object.values(teeMap)[0]);
+    const rating = tee ? tee.rating : null;
+    const slope = tee ? tee.slope : null;
+    const differential = (rating != null && slope != null) ? calcDifferential(gross, rating, slope) : null;
+
+    const lower = p.name.toLowerCase();
+    let entry = roster.find(r => r.name.toLowerCase() === lower);
+    if (!entry) {
+      entry = { name: p.name, hcp: 0, lastUsed: Date.now(), scoreHistory: [] };
+      roster.push(entry);
+    }
+    if (!Array.isArray(entry.scoreHistory)) entry.scoreHistory = [];
+
+    // Avoid duplicate entries for the same round (same course + same date)
+    const dup = entry.scoreHistory.find(s => s.date === date && s.course === g.course);
+    if (dup) return;
+
+    entry.scoreHistory.push({
+      date,
+      course: g.course || '',
+      courseId: g.courseId || '',
+      gross,
+      teeLabel: p.teeLabel || (tee ? tee.label : null),
+      rating,
+      slope,
+      differential,
+      money: moneyTotals[p.id] != null ? moneyTotals[p.id] : null,
+      gameCode: g.code || null
+    });
+    // Keep most recent 50 rounds per player
+    entry.scoreHistory.sort((a, b) => (b.date || 0) - (a.date || 0));
+    entry.scoreHistory = entry.scoreHistory.slice(0, 50);
+    entry.lastUsed = Date.now();
+    changed = true;
+  });
+
+  if (changed) {
+    roster.sort((a, b) => (b.lastUsed || 0) - (a.lastUsed || 0));
+    await savePlayerRoster(roster);
+  }
+}
+
+async function saveCourseSaves(saves) {
+  return await safeSet(KEY_COURSE_DATA, JSON.stringify(saves), true);
+}
+
+async function getCourseScorecard(courseId) {
+  const saves = await getCourseSaves();
+  return saves[courseId] || null;
+}
+
+async function persistCourseScorecard(courseId, name, pars, sis, tees) {
+  if (!courseId) return;
+  const saves = await getCourseSaves();
+  saves[courseId] = {
+    name,
+    pars: pars.slice(),
+    sis: sis.slice(),
+    tees: Array.isArray(tees) ? tees.slice() : [],
+    updatedAt: Date.now()
+  };
+  await saveCourseSaves(saves);
+}
+
+// ============================================================
+// HELPERS
+// ============================================================
+function generateCode() {
+  const words = ['PINE','OAK','ELM','BIRDIE','EAGLE','PAR','TEE','LINK','BACK','FRONT','HOOK','SLICE','FORE','GREEN','ROUGH'];
+  const w = words[Math.floor(Math.random() * words.length)];
+  const n = Math.floor(Math.random() * 90) + 10;
+  return w + n;
+}
+
+function showToast(msg) {
+  const t = $('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(showToast._timer);
+  showToast._timer = setTimeout(() => t.classList.remove('show'), 2200);
+}
+
+function $(id) { return document.getElementById(id); }
+function fmt(n) {
+  if (Math.abs(n) < 0.005) return '$0.00';
+  return (n < 0 ? '-$' : '$') + Math.abs(n).toFixed(2);
+}
+function signed(n) {
+  if (Math.abs(n) < 0.005) return '$0.00';
+  return (n > 0 ? '+$' : '-$') + Math.abs(n).toFixed(2);
+}
+
+// Compute strokes received by player on hole based on HCP and SI.
+// `par` and `rules` are optional; if rules.noPar3Strokes is set, par-3 holes give 0.
+function strokesOnHole(playerHcp, holeSi, par, rules) {
+  if (rules && rules.noPar3Strokes && par === 3) return 0;
+  let strokes = 0;
+  if (playerHcp >= holeSi) strokes++;
+  if (playerHcp >= 18 + holeSi) strokes++;
+  return strokes;
+}
+
+// Net score on a single hole. `par` and `rules` optional for no-par-3 logic.
+function netHoleScore(grossScore, playerHcp, holeSi, par, rules) {
+  if (grossScore == null) return null;
+  return grossScore - strokesOnHole(playerHcp, holeSi, par, rules);
+}
+
+// ============================================================
+// GHIN-STYLE HANDICAP MATH (simplified WHS)
+// ============================================================
+// Differential = (113 / slope) × (gross - rating)
+// Returns a number with one decimal precision.
+function calcDifferential(gross, rating, slope) {
+  if (gross == null || rating == null || slope == null || slope === 0) return null;
+  return Math.round((113 / slope) * (gross - rating) * 10) / 10;
+}
+
+// WHS-table handicap index from a player's score history.
+// Walks the simplified table:
+//   3 rounds: lowest 1 minus 2.0
+//   4 rounds: lowest 1 minus 1.0
+//   5 rounds: lowest 1
+//   6 rounds: avg of lowest 2 minus 1.0
+//   7-8: avg of lowest 2
+//   9-10: avg of lowest 3
+//   11-12: avg of lowest 4
+//   13-14: avg of lowest 5
+//   15-16: avg of lowest 6
+//   17-18: avg of lowest 7
+//   19-20+: avg of lowest 8 (most recent 20 rounds only)
+// Returns { index: number | null, n: count, basis: string }
+function calcHandicapIndex(scoreHistory) {
+  if (!Array.isArray(scoreHistory) || scoreHistory.length < 3) {
+    return { index: null, n: scoreHistory ? scoreHistory.length : 0, basis: 'need 3+ rounds' };
+  }
+  // Use most recent 20 rounds (sorted by date desc)
+  const recent = [...scoreHistory]
+    .filter(s => s.differential != null)
+    .sort((a, b) => (b.date || 0) - (a.date || 0))
+    .slice(0, 20);
+  const n = recent.length;
+  if (n < 3) return { index: null, n, basis: 'need 3+ valid rounds' };
+
+  const diffs = recent.map(s => s.differential).sort((a, b) => a - b);
+
+  let useCount, adjustment, basis;
+  if      (n === 3)  { useCount = 1; adjustment = -2.0; basis = 'lowest 1 of 3, −2.0'; }
+  else if (n === 4)  { useCount = 1; adjustment = -1.0; basis = 'lowest 1 of 4, −1.0'; }
+  else if (n === 5)  { useCount = 1; adjustment = 0;    basis = 'lowest 1 of 5'; }
+  else if (n === 6)  { useCount = 2; adjustment = -1.0; basis = 'avg of lowest 2 of 6, −1.0'; }
+  else if (n <= 8)   { useCount = 2; adjustment = 0;    basis = 'avg of lowest 2 of ' + n; }
+  else if (n <= 10)  { useCount = 3; adjustment = 0;    basis = 'avg of lowest 3 of ' + n; }
+  else if (n <= 12)  { useCount = 4; adjustment = 0;    basis = 'avg of lowest 4 of ' + n; }
+  else if (n <= 14)  { useCount = 5; adjustment = 0;    basis = 'avg of lowest 5 of ' + n; }
+  else if (n <= 16)  { useCount = 6; adjustment = 0;    basis = 'avg of lowest 6 of ' + n; }
+  else if (n <= 18)  { useCount = 7; adjustment = 0;    basis = 'avg of lowest 7 of ' + n; }
+  else               { useCount = 8; adjustment = 0;    basis = 'avg of lowest 8 of ' + n; }
+
+  const used = diffs.slice(0, useCount);
+  const avg = used.reduce((sum, d) => sum + d, 0) / used.length;
+  const index = Math.round((avg + adjustment) * 10) / 10;
+  return { index, n, basis };
+}
+
+// ============================================================
+// SETUP UI
+// ============================================================
+function setupNewGameForm(prefill) {
+  // Build par + SI inputs (initially with standard defaults)
+  const parGrid = $('par-grid');
+  parGrid.innerHTML = '';
+  STANDARD_PARS.forEach((p, i) => {
+    const div = document.createElement('div');
+    div.innerHTML = `<label>${i+1}</label><input type="number" min="3" max="6" value="${p}" data-hole="${i}">`;
+    parGrid.appendChild(div);
+  });
+  const siGrid = $('si-grid');
+  siGrid.innerHTML = '';
+  DEFAULT_SI.forEach((s, i) => {
+    const div = document.createElement('div');
+    div.innerHTML = `<label>${i+1}</label><input type="number" min="1" max="18" value="${s}" data-hole="${i}">`;
+    siGrid.appendChild(div);
+  });
+
+  // Populate course picker
+  const picker = $('course-picker');
+  picker.innerHTML = '<option value="">— Choose a course —</option>';
+  const byCity = {};
+  COURSE_LIBRARY.forEach(c => {
+    if (!byCity[c.city]) byCity[c.city] = [];
+    byCity[c.city].push(c);
+  });
+  Object.keys(byCity).sort().forEach(city => {
+    const og = document.createElement('optgroup');
+    og.label = city;
+    byCity[city].forEach(c => {
+      const opt = document.createElement('option');
+      opt.value = c.id;
+      opt.textContent = c.name + (c.note ? ' (' + c.note + ')' : '');
+      og.appendChild(opt);
+    });
+    picker.appendChild(og);
+  });
+  const customOpt = document.createElement('option');
+  customOpt.value = 'custom';
+  customOpt.textContent = '+ Custom course (not in list)';
+  picker.appendChild(customOpt);
+
+  picker.onchange = async () => {
+    const id = picker.value;
+    const status = $('course-status');
+    const editor = $('scorecard-editor');
+    if (!id) {
+      status.style.display = 'none';
+      editor.style.display = 'none';
+      $('course-name').value = '';
+      $('course-name').dataset.courseId = '';
+      return;
+    }
+    if (id === 'custom') {
+      $('course-name').value = '';
+      $('course-name').dataset.courseId = '';
+      $('course-name').focus();
+      status.className = 'course-status custom';
+      status.querySelector('.icon').textContent = '✏️';
+      status.querySelector('.text').textContent = 'Custom course — enter a name and create the scorecard below';
+      status.style.display = 'flex';
+      editor.style.display = 'block';
+      // Reset par/si to standard defaults
+      $('par-grid').querySelectorAll('input').forEach((inp, i) => inp.value = STANDARD_PARS[i]);
+      $('si-grid').querySelectorAll('input').forEach((inp, i) => inp.value = DEFAULT_SI[i]);
+      renderTeesList([]);
+      return;
+    }
+    // Library course
+    const lib = COURSE_LIBRARY.find(c => c.id === id);
+    $('course-name').value = lib.name;
+    $('course-name').dataset.courseId = id;
+
+    // Check for saved scorecard
+    const saved = await getCourseScorecard(id);
+    if (saved && saved.pars && saved.sis) {
+      // We have a saved scorecard
+      status.className = 'course-status verified';
+      status.querySelector('.icon').textContent = '✓';
+      const updated = saved.updatedAt ? new Date(saved.updatedAt).toLocaleDateString() : '';
+      status.querySelector('.text').textContent = `Scorecard saved by your group${updated ? ' (' + updated + ')' : ''}. You can edit if needed.`;
+      status.style.display = 'flex';
+      editor.style.display = 'block';
+      $('par-grid').querySelectorAll('input').forEach((inp, i) => inp.value = saved.pars[i] || 4);
+      $('si-grid').querySelectorAll('input').forEach((inp, i) => inp.value = saved.sis[i] || (i + 1));
+      // Tees array (preferred) — fall back to legacy single rating/slope (migrate to one tee labeled "Back").
+      let teesToShow = [];
+      if (Array.isArray(saved.tees) && saved.tees.length > 0) {
+        teesToShow = saved.tees.slice();
+      } else if (saved.rating != null || saved.slope != null) {
+        teesToShow = [{ label: 'Back', rating: saved.rating, slope: saved.slope }];
+      }
+      renderTeesList(teesToShow);
+    } else {
+      // First time playing this course — prompt to create
+      status.className = 'course-status needs-card';
+      status.querySelector('.icon').textContent = '⚠️';
+      status.querySelector('.text').textContent = 'No scorecard yet. Fill in par + stroke index below — it\'ll be saved for next time.';
+      status.style.display = 'flex';
+      editor.style.display = 'block';
+      $('par-grid').querySelectorAll('input').forEach((inp, i) => inp.value = STANDARD_PARS[i]);
+      $('si-grid').querySelectorAll('input').forEach((inp, i) => inp.value = DEFAULT_SI[i]);
+      renderTeesList([]);
+    }
+  };
+
+  // Players
+  const list = $('players-list');
+  list.innerHTML = '';
+  const startCount = (prefill && prefill.players && prefill.players.length) ? prefill.players.length : 4;
+  for (let i = 0; i < startCount; i++) {
+    const p = prefill && prefill.players ? prefill.players[i] : null;
+    addPlayerRow(p ? p.name : '', p ? p.hcp : 0);
+  }
+
+  // Build junk options
+  const junkGrid = $('junk-grid');
+  junkGrid.innerHTML = '';
+  JUNK_TYPES.forEach(j => {
+    const div = document.createElement('div');
+    div.className = 'junk-item';
+    div.innerHTML = `
+      <input type="checkbox" id="junk-${j.id}" ${j.id === 'gir' ? 'checked' : ''}>
+      <label for="junk-${j.id}" style="margin:0;flex:1;font-weight:400;color:var(--text)" title="${j.desc}">${j.name}</label>
+      <input type="number" id="junk-val-${j.id}" value="${j.defaultVal}" min="0" step="0.5">
+    `;
+    junkGrid.appendChild(div);
+  });
+
+  // Reset toggles — all games default OFF; user picks what they want each round
+  ['skins','nassau','stroke','banker','vegas','dvegas','sixes','wolf','match','team-match','team-lowball','p3greenie','junk'].forEach(g => {
+    $('game-' + g).checked = false;
+    $('opts-' + g).classList.remove('show');
+  });
+
+  // Reset participant pickers — fresh start every round
+  state.gameParticipants = {};
+
+  // Reset multi-instance Match Play and Nassau lists — fresh on every new round
+  state.matchInstances = [];
+  state.nassauInstances = [];
+
+  // Reset course UI
+  $('course-name').value = '';
+  $('course-name').dataset.courseId = '';
+  $('course-status').style.display = 'none';
+  $('scorecard-editor').style.display = 'none';
+  $('course-picker').value = '';
+  $('course-rating') && ($('course-rating').value = '');
+  $('course-slope') && ($('course-slope').value = '');
+  // Tees: clear and start fresh (one empty row to begin with)
+  renderTeesList([]);
+  state.playerTees = {};
+
+  // Tournament context
+  if (prefill && prefill.tourneyId) {
+    $('tourney-context').style.display = 'block';
+    $('tourney-context-name').textContent = prefill.tourneyName || 'Tournament';
+    $('tourney-context-date').textContent = prefill.tourneyDate || '';
+  } else {
+    $('tourney-context').style.display = 'none';
+  }
+
+  // If prefill includes course (from a tournament), pre-select it
+  if (prefill && prefill.course) {
+    // Try to match library course by name
+    const lib = COURSE_LIBRARY.find(c => c.name.toLowerCase() === prefill.course.toLowerCase());
+    if (lib) {
+      picker.value = lib.id;
+      picker.onchange();
+    } else {
+      picker.value = 'custom';
+      picker.onchange();
+      $('course-name').value = prefill.course;
+    }
+  }
+}
+
+function addPlayerRow(name = '', hcp = 0) {
+  const list = $('players-list');
+  if (list.children.length >= 12) {
+    showToast('Max 12 players');
+    return;
+  }
+  const row = document.createElement('div');
+  row.className = 'player-row';
+  row.innerHTML = `
+    <input type="text" placeholder="Player name" value="${name || ''}">
+    <input type="number" placeholder="HCP" value="${hcp}" min="0" max="36">
+    <button class="remove" title="Remove">×</button>
+  `;
+  row.querySelector('.remove').onclick = () => {
+    if (list.children.length > 2) row.remove();
+    else showToast('Need at least 2 players');
+    renderTeamPickers();
+    renderParticipantPickers();
+    renderMatchInstances();
+    renderNassauInstances();
+  };
+  // Re-render team pickers when the name changes too
+  row.querySelector('input[type=text]').addEventListener('input', () => {
+    renderTeamPickers();
+    renderParticipantPickers();
+    renderMatchInstances();
+    renderNassauInstances();
+  });
+  list.appendChild(row);
+  renderTeamPickers();
+  renderParticipantPickers();
+  renderMatchInstances();
+  renderNassauInstances();
+}
+
+// Open the saved-roster picker
+async function openRosterPicker() {
+  $('roster-modal').classList.add('show');
+  $('roster-search').value = '';
+  await renderRosterList();
+}
+
+// Render the roster list inside the modal (filtered by search box)
+async function renderRosterList() {
+  const container = $('roster-list');
+  const search = ($('roster-search').value || '').toLowerCase().trim();
+  const roster = await getPlayerRoster();
+
+  // Names already in the setup form (so we can disable / mark)
+  const inSetup = new Set(getCurrentSetupPlayers().map(p => p.name.toLowerCase()));
+
+  const filtered = roster.filter(p => !search || p.name.toLowerCase().includes(search));
+  container.innerHTML = '';
+
+  if (roster.length === 0) {
+    container.innerHTML = `<div class="help-text" style="text-align:center;padding:20px">No saved players yet. After your first round, names will appear here automatically.</div>`;
+    return;
+  }
+  if (filtered.length === 0) {
+    container.innerHTML = `<div class="help-text" style="text-align:center;padding:12px">No matches.</div>`;
+    return;
+  }
+
+  filtered.forEach(p => {
+    const row = document.createElement('div');
+    const already = inSetup.has(p.name.toLowerCase());
+    row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px 4px;border-bottom:1px solid var(--border);' + (already ? 'opacity:0.5' : '');
+    // Calculated handicap from score history (if 3+ rounds)
+    const calc = calcHandicapIndex(p.scoreHistory || []);
+    let hcpLine;
+    if (calc.index != null) {
+      hcpLine = `<div class="small-text" style="font-size:11px">
+        <span style="color:var(--accent);font-weight:600">HCP ${calc.index}</span>
+        <span style="color:var(--text-muted)"> · GHIN-calc, ${calc.n} round${calc.n > 1 ? 's' : ''}</span>
+      </div>`;
+    } else if ((p.scoreHistory || []).length > 0) {
+      hcpLine = `<div class="small-text" style="font-size:11px">HCP ${p.hcp || 0} <span style="color:var(--text-muted)">· ${(p.scoreHistory || []).length}/3 rounds for auto-calc</span></div>`;
+    } else {
+      hcpLine = `<div class="small-text" style="font-size:11px">HCP ${p.hcp || 0}</div>`;
+    }
+    row.innerHTML = `
+      <div style="flex:1;font-size:14px">
+        <div style="font-weight:500">${p.name}${already ? ' <span class="small-text">(added)</span>' : ''}</div>
+        ${hcpLine}
+      </div>
+      <button class="small roster-add-btn" ${already ? 'disabled' : ''}>${already ? '✓' : 'Add'}</button>
+      <button class="small roster-del-btn" title="Remove from roster" style="background:transparent;color:var(--danger);border-color:var(--danger);padding:4px 8px">×</button>
+    `;
+    row.querySelector('.roster-add-btn').onclick = () => {
+      if (already) return;
+      // Use calculated handicap if available; fall back to stored hcp
+      const hcpToUse = calc.index != null ? Math.round(calc.index) : p.hcp;
+      // Find an empty player row, or create new
+      const list = $('players-list');
+      const rows = Array.from(list.querySelectorAll('.player-row'));
+      const emptyRow = rows.find(r => !r.querySelector('input[type=text]').value.trim());
+      if (emptyRow) {
+        emptyRow.querySelector('input[type=text]').value = p.name;
+        emptyRow.querySelector('input[type=number]').value = hcpToUse;
+        renderTeamPickers();
+        renderParticipantPickers();
+      } else {
+        addPlayerRow(p.name, hcpToUse);
+      }
+      if (calc.index != null) {
+        showToast(`${p.name} added with calculated HCP ${calc.index} (${calc.n} rounds)`);
+      }
+      renderRosterList();
+    };
+    row.querySelector('.roster-del-btn').onclick = async () => {
+      if (!confirm(`Remove ${p.name} from saved players? They'll be re-added next time you use them in a round.`)) return;
+      await deletePlayerFromRoster(p.name);
+      await renderRosterList();
+    };
+    container.appendChild(row);
+  });
+}
+
+// Get current player list from setup form (without committing)
+function getCurrentSetupPlayers() {
+  const list = $('players-list');
+  if (!list) return [];
+  return Array.from(list.querySelectorAll('.player-row')).map((row, i) => {
+    const name = row.querySelector('input[type=text]').value.trim();
+    return { idx: i, name };
+  }).filter(p => p.name); // drop blank rows — they aren't real players
+}
+
+// Render the team picker UI for both team-match and team-lowball
+// Tee list management for the scorecard editor. State is held on a hidden
+// data structure attached to the tees-list element so changes propagate
+// cleanly. Tees: [ { label, rating, slope } ].
+function getCurrentTees() {
+  const list = $('tees-list');
+  if (!list) return [];
+  return Array.from(list.querySelectorAll('.tee-row')).map(row => ({
+    label: row.querySelector('.tee-label').value.trim(),
+    rating: row.querySelector('.tee-rating').value.trim() === '' ? null : parseFloat(row.querySelector('.tee-rating').value),
+    slope: row.querySelector('.tee-slope').value.trim() === '' ? null : parseInt(row.querySelector('.tee-slope').value)
+  })).filter(t => t.label || t.rating != null || t.slope != null);
+}
+
+function renderTeesList(tees) {
+  const list = $('tees-list');
+  if (!list) return;
+  list.innerHTML = '';
+  if (!Array.isArray(tees) || tees.length === 0) {
+    tees = [{ label: '', rating: null, slope: null }];
+  }
+  tees.forEach((t, i) => {
+    addTeeRow(t.label || '', t.rating, t.slope);
+  });
+  // Refresh player tee dropdowns whenever the tee list changes
+  renderPlayerTeeSelects();
+}
+
+function addTeeRow(label = '', rating = null, slope = null) {
+  const list = $('tees-list');
+  if (!list) return;
+  const row = document.createElement('div');
+  row.className = 'tee-row';
+  row.style.cssText = 'display:flex;gap:6px;align-items:center;margin-bottom:6px';
+  row.innerHTML = `
+    <input type="text" class="tee-label" placeholder="Label (e.g. Back)" value="${label}" style="flex:1.2">
+    <input type="number" class="tee-rating" step="0.1" min="50" max="80" placeholder="Rating" value="${rating != null ? rating : ''}" style="width:80px">
+    <input type="number" class="tee-slope" step="1" min="55" max="155" placeholder="Slope" value="${slope != null ? slope : ''}" style="width:70px">
+    <button class="small tee-remove-btn" style="background:transparent;color:var(--danger);border-color:var(--danger);padding:4px 10px">×</button>
+  `;
+  row.querySelector('.tee-remove-btn').onclick = () => {
+    if (list.children.length > 1) row.remove();
+    renderPlayerTeeSelects();
+  };
+  // Refresh player tee dropdowns when label changes
+  row.querySelector('.tee-label').addEventListener('input', renderPlayerTeeSelects);
+  list.appendChild(row);
+}
+
+// Render a tee dropdown next to each player on the setup form (only if 2+
+// tees are defined — otherwise the single tee is implicit). Stores the
+// player's selection by name in state.playerTees.
+function renderPlayerTeeSelects() {
+  if (!state.playerTees) state.playerTees = {};
+  const tees = getCurrentTees();
+  const validTees = tees.filter(t => t.label);
+  // Drop selections for tees that no longer exist (label changed or removed)
+  Object.keys(state.playerTees).forEach(name => {
+    if (!validTees.find(t => t.label === state.playerTees[name])) {
+      delete state.playerTees[name];
+    }
+  });
+  // For each player row, find or create the tee select
+  const playerRows = document.querySelectorAll('#players-list .player-row');
+  playerRows.forEach(row => {
+    let teeBox = row.querySelector('.tee-select-box');
+    if (validTees.length < 2) {
+      // 0 or 1 tees → no per-player selection needed
+      if (teeBox) teeBox.remove();
+      return;
+    }
+    const nameInput = row.querySelector('input[type=text]');
+    const name = nameInput ? nameInput.value.trim() : '';
+    if (!teeBox) {
+      teeBox = document.createElement('div');
+      teeBox.className = 'tee-select-box';
+      teeBox.style.cssText = 'flex-basis:100%;margin-top:4px';
+      row.appendChild(teeBox);
+    }
+    const currentVal = state.playerTees[name] || '';
+    teeBox.innerHTML = `
+      <select class="tee-select" style="width:100%;font-size:12px">
+        <option value="">— pick tee —</option>
+        ${validTees.map(t => `<option value="${t.label}" ${t.label === currentVal ? 'selected' : ''}>${t.label}</option>`).join('')}
+      </select>
+    `;
+    teeBox.querySelector('.tee-select').onchange = (e) => {
+      if (!name) return;
+      state.playerTees[name] = e.target.value;
+    };
+  });
+}
+
+function renderTeamPickers() {
+  ['teamMatch', 'teamLowball'].forEach(gameKey => {
+    const container = document.getElementById('team-picker-' + gameKey);
+    if (!container) return;
+    const players = getCurrentSetupPlayers();
+    // Keep team assignments by player name; default everyone to A
+    if (!state.teamAssignments) state.teamAssignments = {};
+    if (!state.teamAssignments[gameKey]) state.teamAssignments[gameKey] = {};
+    const assigns = state.teamAssignments[gameKey];
+
+    // Initialize new players: split evenly so first half = A, second half = B
+    players.forEach((p, i) => {
+      if (assigns[p.name] !== 'A' && assigns[p.name] !== 'B') {
+        assigns[p.name] = i < Math.ceil(players.length / 2) ? 'A' : 'B';
+      }
+    });
+    // Drop assignments for removed players
+    Object.keys(assigns).forEach(n => {
+      if (!players.find(p => p.name === n)) delete assigns[n];
+    });
+
+    const teamA = players.filter(p => assigns[p.name] === 'A');
+    const teamB = players.filter(p => assigns[p.name] === 'B');
+    const balanced = teamA.length === teamB.length && teamA.length > 0 && players.length % 2 === 0;
+
+    container.className = 'team-picker' + (balanced ? '' : ' unbalanced');
+    container.innerHTML = `
+      <div class="team-col">
+        <div class="team-header a">Team A · ${teamA.length}</div>
+        ${teamA.map(p => `<button class="player-chip" data-game="${gameKey}" data-name="${p.name}">${p.name}</button>`).join('') || '<div class="small-text" style="text-align:center;padding:8px">empty</div>'}
+      </div>
+      <div class="team-col">
+        <div class="team-header b">Team B · ${teamB.length}</div>
+        ${teamB.map(p => `<button class="player-chip" data-game="${gameKey}" data-name="${p.name}">${p.name}</button>`).join('') || '<div class="small-text" style="text-align:center;padding:8px">empty</div>'}
+      </div>
+    `;
+
+    // Update help text
+    const help = document.getElementById('team-picker-help-' + gameKey);
+    if (help) {
+      if (players.length === 0) {
+        help.textContent = 'Add players first.';
+      } else if (players.length % 2 !== 0) {
+        help.innerHTML = `<span style="color:var(--danger)">Odd number of players (${players.length}) — add or remove one to make teams even.</span>`;
+      } else if (!balanced) {
+        help.innerHTML = `<span style="color:var(--danger)">Unbalanced: ${teamA.length} vs ${teamB.length}. Tap a player to swap teams.</span>`;
+      } else {
+        help.textContent = `Balanced ${teamA.length}v${teamB.length}. Tap a player to swap teams.`;
+      }
+    }
+
+    // Wire chip clicks
+    container.querySelectorAll('.player-chip').forEach(chip => {
+      chip.onclick = () => {
+        const name = chip.dataset.name;
+        assigns[name] = (assigns[name] === 'A') ? 'B' : 'A';
+        renderTeamPickers();
+      };
+    });
+  });
+}
+
+// Participant picker: each game card has a row of player chips that the user
+// taps to include/exclude that player from the game. Default is empty —
+// the user must explicitly pick participants. State is keyed by game (UI key)
+// and holds a Set of player names.
+//
+// Games skipped here (handled by team picker instead): team-match, team-lowball.
+const PARTICIPANT_GAME_KEYS = [
+  { key: 'skins',     min: 2, label: 'Skins participants' },
+  // 'nassau' uses per-instance pair pickers; no generic participant gating
+  { key: 'stroke',    min: 2, label: 'Stroke pot buy-ins' },
+  { key: 'banker',    min: 2, label: 'Banker participants' },
+  { key: 'vegas',     min: 4, max: 4, label: 'Vegas participants (exactly 4)' },
+  { key: 'dvegas',    min: 4, max: 4, label: 'Dynamic Vegas participants (exactly 4)' },
+  { key: 'sixes',     min: 4, max: 4, label: '6\'s participants (exactly 4)' },
+  { key: 'wolf',      min: 3, label: 'Wolf participants (3+)' },
+  // 'match' uses per-instance pair pickers; no generic participant gating
+  { key: 'p3greenie', min: 2, label: 'Par 3 Greenie participants' },
+  { key: 'junk',      min: 2, label: 'Junk side bet participants' }
+];
+
+// Multi-instance Match Play UI. Each instance: { value, net, pair: [nameA, nameB] }.
+// Instances are stored in state.matchInstances and rendered as cards inside opts-match.
+function renderMatchInstances() {
+  const container = $('match-instances');
+  if (!container) return;
+  if (!Array.isArray(state.matchInstances)) state.matchInstances = [];
+  if (state.matchInstances.length === 0) {
+    state.matchInstances.push({ value: 5, net: true, pair: [] });
+  }
+
+  const players = getCurrentSetupPlayers();
+  // Drop instance pair entries for removed players
+  state.matchInstances.forEach(inst => {
+    inst.pair = (inst.pair || []).filter(name => players.find(p => p.name === name));
+  });
+
+  container.innerHTML = '';
+  state.matchInstances.forEach((inst, idx) => {
+    const card = document.createElement('div');
+    card.style.cssText = 'background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:8px';
+    const pairChips = players.map(p => {
+      const active = (inst.pair || []).includes(p.name);
+      return `<span class="participant-chip ${active ? 'active' : ''}" data-name="${p.name}" data-idx="${idx}">${p.name}</span>`;
+    }).join('');
+    const status = (inst.pair && inst.pair.length === 2) ? '✓' : '<span class="pp-warn">— pick 2 players</span>';
+    card.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <strong style="font-size:13px">Match ${idx + 1}</strong>
+        <button class="small match-remove-btn" data-idx="${idx}" style="background:transparent;color:var(--danger);border-color:var(--danger);padding:4px 8px">×</button>
+      </div>
+      <div class="row">
+        <div>
+          <label>$ per match</label>
+          <input type="number" class="match-value" data-idx="${idx}" value="${inst.value || 5}" min="0" step="1">
+        </div>
+        <div>
+          <label>Net or gross</label>
+          <select class="match-net" data-idx="${idx}">
+            <option value="net" ${inst.net !== false ? 'selected' : ''}>Net</option>
+            <option value="gross" ${inst.net === false ? 'selected' : ''}>Gross</option>
+          </select>
+        </div>
+      </div>
+      <div class="pp-label" style="margin-top:8px">Pair (${(inst.pair || []).length}/2 selected) ${status}</div>
+      <div class="pp-chips">${pairChips || '<div class="small-text" style="padding:4px">Add players first.</div>'}</div>
+    `;
+    container.appendChild(card);
+  });
+
+  // Wire chip clicks (toggle pair membership, max 2)
+  container.querySelectorAll('.participant-chip').forEach(chip => {
+    chip.onclick = () => {
+      const idx = parseInt(chip.dataset.idx);
+      const name = chip.dataset.name;
+      const inst = state.matchInstances[idx];
+      if (!inst.pair) inst.pair = [];
+      if (inst.pair.includes(name)) {
+        inst.pair = inst.pair.filter(n => n !== name);
+      } else {
+        if (inst.pair.length >= 2) {
+          showToast('Match play is 1v1 — drop one first');
+          return;
+        }
+        inst.pair.push(name);
+      }
+      renderMatchInstances();
+    };
+  });
+  container.querySelectorAll('.match-value').forEach(inp => {
+    inp.onchange = () => {
+      const idx = parseInt(inp.dataset.idx);
+      state.matchInstances[idx].value = parseFloat(inp.value) || 0;
+    };
+  });
+  container.querySelectorAll('.match-net').forEach(sel => {
+    sel.onchange = () => {
+      const idx = parseInt(sel.dataset.idx);
+      state.matchInstances[idx].net = sel.value === 'net';
+    };
+  });
+  container.querySelectorAll('.match-remove-btn').forEach(btn => {
+    btn.onclick = () => {
+      const idx = parseInt(btn.dataset.idx);
+      state.matchInstances.splice(idx, 1);
+      if (state.matchInstances.length === 0) state.matchInstances.push({ value: 5, net: true, pair: [] });
+      renderMatchInstances();
+    };
+  });
+}
+
+// Multi-instance Nassau UI. Each instance: { value, format, allowHuckle,
+// birdiePay, eaglePay, hioPay, pair: [nameA, nameB] }.
+function renderNassauInstances() {
+  const container = $('nassau-instances');
+  if (!container) return;
+  if (!Array.isArray(state.nassauInstances)) state.nassauInstances = [];
+  if (state.nassauInstances.length === 0) {
+    state.nassauInstances.push({
+      value: 5, format: 'stroke', allowHuckle: true,
+      birdiePay: 10, eaglePay: 20, hioPay: 100,
+      pair: []
+    });
+  }
+
+  const players = getCurrentSetupPlayers();
+  state.nassauInstances.forEach(inst => {
+    inst.pair = (inst.pair || []).filter(name => players.find(p => p.name === name));
+  });
+
+  container.innerHTML = '';
+  state.nassauInstances.forEach((inst, idx) => {
+    const card = document.createElement('div');
+    card.style.cssText = 'background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:8px';
+    const pairChips = players.map(p => {
+      const active = (inst.pair || []).includes(p.name);
+      return `<span class="participant-chip ${active ? 'active' : ''}" data-name="${p.name}" data-idx="${idx}">${p.name}</span>`;
+    }).join('');
+    const status = (inst.pair && inst.pair.length === 2) ? '✓' : '<span class="pp-warn">— pick 2 players</span>';
+    card.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <strong style="font-size:13px">Nassau ${idx + 1}</strong>
+        <button class="small nassau-remove-btn" data-idx="${idx}" style="background:transparent;color:var(--danger);border-color:var(--danger);padding:4px 8px">×</button>
+      </div>
+      <div class="row">
+        <div>
+          <label>$ per side</label>
+          <input type="number" class="nassau-value" data-idx="${idx}" value="${inst.value || 5}" min="0" step="1">
+        </div>
+        <div>
+          <label>Format</label>
+          <select class="nassau-format" data-idx="${idx}">
+            <option value="stroke" ${inst.format !== 'match' ? 'selected' : ''}>Stroke play</option>
+            <option value="match" ${inst.format === 'match' ? 'selected' : ''}>Match play</option>
+          </select>
+        </div>
+      </div>
+      <label style="display:flex;align-items:center;gap:6px;margin-top:8px;cursor:pointer">
+        <input type="checkbox" class="nassau-huckle" data-idx="${idx}" ${inst.allowHuckle !== false ? 'checked' : ''} style="width:auto;margin:0">
+        <span style="font-size:12px">Allow Huckles</span>
+      </label>
+      <details style="margin-top:8px">
+        <summary class="small-text" style="cursor:pointer;color:var(--text-muted)">Special-score payouts</summary>
+        <div class="row" style="margin-top:6px">
+          <div>
+            <label>Birdie</label>
+            <input type="number" class="nassau-birdie" data-idx="${idx}" value="${inst.birdiePay || 0}" min="0" step="1">
+          </div>
+          <div>
+            <label>Eagle</label>
+            <input type="number" class="nassau-eagle" data-idx="${idx}" value="${inst.eaglePay || 0}" min="0" step="1">
+          </div>
+          <div>
+            <label>HIO</label>
+            <input type="number" class="nassau-hio" data-idx="${idx}" value="${inst.hioPay || 0}" min="0" step="1">
+          </div>
+        </div>
+      </details>
+      <div class="pp-label" style="margin-top:8px">Pair (${(inst.pair || []).length}/2 selected) ${status}</div>
+      <div class="pp-chips">${pairChips || '<div class="small-text" style="padding:4px">Add players first.</div>'}</div>
+    `;
+    container.appendChild(card);
+  });
+
+  container.querySelectorAll('.participant-chip').forEach(chip => {
+    chip.onclick = () => {
+      const idx = parseInt(chip.dataset.idx);
+      const name = chip.dataset.name;
+      const inst = state.nassauInstances[idx];
+      if (!inst.pair) inst.pair = [];
+      if (inst.pair.includes(name)) {
+        inst.pair = inst.pair.filter(n => n !== name);
+      } else {
+        if (inst.pair.length >= 2) {
+          showToast('Nassau is 1v1 — drop one first');
+          return;
+        }
+        inst.pair.push(name);
+      }
+      renderNassauInstances();
+    };
+  });
+
+  const wireField = (cls, key, parser) => {
+    container.querySelectorAll('.' + cls).forEach(el => {
+      el.onchange = () => {
+        const idx = parseInt(el.dataset.idx);
+        state.nassauInstances[idx][key] = parser(el);
+      };
+    });
+  };
+  wireField('nassau-value', 'value', el => parseFloat(el.value) || 0);
+  wireField('nassau-format', 'format', el => el.value);
+  wireField('nassau-huckle', 'allowHuckle', el => el.checked);
+  wireField('nassau-birdie', 'birdiePay', el => parseFloat(el.value) || 0);
+  wireField('nassau-eagle', 'eaglePay', el => parseFloat(el.value) || 0);
+  wireField('nassau-hio', 'hioPay', el => parseFloat(el.value) || 0);
+
+  container.querySelectorAll('.nassau-remove-btn').forEach(btn => {
+    btn.onclick = () => {
+      const idx = parseInt(btn.dataset.idx);
+      state.nassauInstances.splice(idx, 1);
+      if (state.nassauInstances.length === 0) {
+        state.nassauInstances.push({
+          value: 5, format: 'stroke', allowHuckle: true,
+          birdiePay: 10, eaglePay: 20, hioPay: 100, pair: []
+        });
+      }
+      renderNassauInstances();
+    };
+  });
+}
+
+function renderParticipantPickers() {
+  const players = getCurrentSetupPlayers();
+  if (!state.gameParticipants) state.gameParticipants = {};
+
+  PARTICIPANT_GAME_KEYS.forEach(spec => {
+    const optsDiv = document.getElementById('opts-' + spec.key);
+    if (!optsDiv) return;
+    // Only render if the game is enabled
+    const cb = document.getElementById('game-' + spec.key);
+    if (!cb || !cb.checked) {
+      // Remove any stale picker
+      const existing = optsDiv.querySelector('.participant-picker');
+      if (existing) existing.remove();
+      return;
+    }
+
+    // Initialize the participant set if needed (default empty, per user spec)
+    if (!state.gameParticipants[spec.key]) state.gameParticipants[spec.key] = new Set();
+    const partSet = state.gameParticipants[spec.key];
+
+    // Drop participants for removed players
+    Array.from(partSet).forEach(n => {
+      if (!players.find(p => p.name === n)) partSet.delete(n);
+    });
+
+    // Build or find the picker container
+    let picker = optsDiv.querySelector('.participant-picker');
+    if (!picker) {
+      picker = document.createElement('div');
+      picker.className = 'participant-picker';
+      optsDiv.appendChild(picker);
+    }
+
+    const count = partSet.size;
+    let warning = '';
+    if (count === 0) {
+      warning = ` <span class="pp-warn">— pick at least ${spec.min}</span>`;
+    } else if (count < spec.min) {
+      warning = ` <span class="pp-warn">— need ${spec.min - count} more</span>`;
+    } else if (spec.max && count > spec.max) {
+      warning = ` <span class="pp-warn">— too many (max ${spec.max})</span>`;
+    } else if (spec.max && count === spec.max) {
+      warning = ' ✓';
+    } else {
+      warning = ' ✓';
+    }
+
+    let html = `<div class="pp-label">${spec.label} (${count} selected)${warning}</div><div class="pp-chips">`;
+    if (players.length === 0) {
+      html += '<div class="small-text" style="padding:4px">Add players first.</div>';
+    } else {
+      players.forEach(p => {
+        const active = partSet.has(p.name);
+        html += `<span class="participant-chip ${active ? 'active' : ''}" data-game="${spec.key}" data-name="${p.name}">${p.name}</span>`;
+      });
+    }
+    html += '</div>';
+    picker.innerHTML = html;
+
+    // Wire chip clicks
+    picker.querySelectorAll('.participant-chip').forEach(chip => {
+      chip.onclick = () => {
+        const name = chip.dataset.name;
+        if (partSet.has(name)) partSet.delete(name);
+        else partSet.add(name);
+        renderParticipantPickers();
+      };
+    });
+  });
+}
+
+// Translate the team picker (which stores by name) into ID arrays
+// at round-start time. Returns null if not balanced.
+function buildTeamAssignment(players, gameKey) {
+  const assigns = (state.teamAssignments && state.teamAssignments[gameKey]) || {};
+  const teamA = [];
+  const teamB = [];
+  players.forEach(p => {
+    const t = assigns[p.name];
+    if (t === 'A') teamA.push(p.id);
+    else if (t === 'B') teamB.push(p.id);
+    else {
+      // Unassigned — split evenly as fallback
+      if (teamA.length <= teamB.length) teamA.push(p.id);
+      else teamB.push(p.id);
+    }
+  });
+  if (teamA.length !== teamB.length || teamA.length === 0) return null;
+  return { teamA, teamB };
+}
+
+// Inverse of gatherSetup — apply a previously-saved config back into the form.
+// Used when starting a round from a saved tournament: every field gets
+// pre-populated, but the user can still edit anything before tapping Start.
+function applySavedConfig(config) {
+  if (!config) return;
+
+  // Pars and stroke indexes
+  if (config.pars && config.pars.length === 18) {
+    $('par-grid').querySelectorAll('input').forEach((inp, i) => {
+      if (config.pars[i] != null) inp.value = config.pars[i];
+    });
+  }
+  if (config.sis && config.sis.length === 18) {
+    $('si-grid').querySelectorAll('input').forEach((inp, i) => {
+      if (config.sis[i] != null) inp.value = config.sis[i];
+    });
+  }
+
+  // Tees (preferred) — fall back to legacy single rating/slope (one tee 'Back').
+  let teesToShow = [];
+  if (Array.isArray(config.tees) && config.tees.length > 0) {
+    teesToShow = config.tees.slice();
+  } else if (config.rating != null || config.slope != null) {
+    teesToShow = [{ label: 'Back', rating: config.rating, slope: config.slope }];
+  }
+  renderTeesList(teesToShow);
+
+  // Players (use rawHcp if available so handicap percentages don't compound)
+  if (config.players && config.players.length > 0) {
+    $('players-list').innerHTML = '';
+    state.playerTees = state.playerTees || {};
+    config.players.forEach(p => {
+      addPlayerRow(p.name || '', p.rawHcp != null ? p.rawHcp : (p.hcp || 0));
+      // Restore each player's tee selection by name
+      if (p.name && p.teeLabel) {
+        state.playerTees[p.name] = p.teeLabel;
+      }
+    });
+    renderPlayerTeeSelects();
+  }
+
+  // Handicap rules
+  if (config.hcpRules) {
+    if (config.hcpRules.basis) $('hcp-basis').value = config.hcpRules.basis;
+    if (config.hcpRules.pct != null) {
+      $('hcp-pct').value = config.hcpRules.pct;
+      $('hcp-pct-label').textContent = config.hcpRules.pct + '%';
+    }
+    $('hcp-no-par3-strokes').checked = !!config.hcpRules.noPar3Strokes;
+  }
+
+  // Game toggles + their option panels
+  const games = config.games || {};
+  const gameKeys = {
+    'skins': 'skins', 'nassau': 'nassau', 'stroke': 'stroke', 'banker': 'banker',
+    'vegas': 'vegas', 'dvegas': 'dvegas', 'sixes': 'sixes', 'wolf': 'wolf', 'match': 'match',
+    'team-match': 'teamMatch', 'team-lowball': 'teamLowball',
+    'p3greenie': 'p3greenie', 'junk': 'junk'
+  };
+  Object.keys(gameKeys).forEach(uiKey => {
+    const cfgKey = gameKeys[uiKey];
+    const enabled = games[cfgKey] !== undefined;
+    const cb = $('game-' + uiKey);
+    if (cb) cb.checked = enabled;
+    const opts = $('opts-' + uiKey);
+    if (opts) opts.classList.toggle('show', enabled);
+  });
+
+  // Skins
+  if (games.skins) {
+    if (games.skins.value != null) $('skin-value').value = games.skins.value;
+    if (games.skins.tieRule) $('skin-carry').value = games.skins.tieRule;
+    if (games.skins.require) $('skin-require').value = games.skins.require;
+  }
+
+  // Nassau — multi-instance restore. Picker stores by name.
+  if (games.nassau) {
+    const insts = Array.isArray(games.nassau.instances) && games.nassau.instances.length > 0
+      ? games.nassau.instances
+      : [games.nassau];
+    state.nassauInstances = insts.map(inst => {
+      // Resolve pair names. Prefer participantNames (stable), fall back to participants (IDs).
+      let pair = [];
+      if (Array.isArray(inst.participantNames)) {
+        pair = inst.participantNames.slice();
+      } else if (Array.isArray(inst.participants)) {
+        pair = inst.participants.map(pid => {
+          const p = (config.players || []).find(pl => pl.id === pid);
+          return p ? p.name : null;
+        }).filter(Boolean);
+      }
+      return {
+        value: inst.value != null ? inst.value : 5,
+        format: inst.format || 'stroke',
+        allowHuckle: inst.allowHuckle !== false,
+        birdiePay: inst.birdiePay || 0,
+        eaglePay: inst.eaglePay || 0,
+        hioPay: inst.hioPay || 0,
+        pair
+      };
+    });
+    renderNassauInstances();
+  }
+
+  // Stroke
+  if (games.stroke) {
+    if (games.stroke.buyin != null) $('stroke-value').value = games.stroke.buyin;
+    $('stroke-net').value = games.stroke.net ? 'net' : 'gross';
+  }
+
+  // Banker
+  if (games.banker) {
+    $('banker-net').value = games.banker.net ? 'net' : 'gross';
+    if (games.banker.loserStart != null) $('banker-loser-start').value = games.banker.loserStart;
+    if (games.banker.birdieDouble) $('banker-birdie-double').value = games.banker.birdieDouble;
+    if (games.banker.order) $('banker-order').value = games.banker.order;
+  }
+
+  // Vegas
+  if (games.vegas) {
+    if (games.vegas.value != null) $('vegas-value').value = games.vegas.value;
+    $('vegas-net').value = games.vegas.net ? 'net' : 'gross';
+    $('vegas-rotate').value = games.vegas.rotate === 'fixed' ? 'fixed' : 'rotate';
+  }
+
+  // Dynamic Vegas
+  if (games.dvegas) {
+    if (games.dvegas.value != null) $('dvegas-value').value = games.dvegas.value;
+    $('dvegas-net').value = games.dvegas.net ? 'net' : 'gross';
+  }
+
+  // Sixes
+  if (games.sixes) {
+    if (games.sixes.value != null) $('sixes-value').value = games.sixes.value;
+    $('sixes-net').value = games.sixes.net ? 'net' : 'gross';
+  }
+
+  // Wolf
+  if (games.wolf && games.wolf.value != null) $('wolf-value').value = games.wolf.value;
+
+  // Match play — multi-instance restore.
+  if (games.match) {
+    const insts = Array.isArray(games.match.instances) && games.match.instances.length > 0
+      ? games.match.instances
+      : [games.match];
+    state.matchInstances = insts.map(inst => {
+      let pair = [];
+      if (Array.isArray(inst.participantNames)) {
+        pair = inst.participantNames.slice();
+      } else if (Array.isArray(inst.participants)) {
+        pair = inst.participants.map(pid => {
+          const p = (config.players || []).find(pl => pl.id === pid);
+          return p ? p.name : null;
+        }).filter(Boolean);
+      }
+      return {
+        value: inst.value != null ? inst.value : 5,
+        net: inst.net !== false,
+        pair
+      };
+    });
+    renderMatchInstances();
+  }
+
+  // Team match
+  if (games.teamMatch) {
+    if (games.teamMatch.value != null) $('team-match-value').value = games.teamMatch.value;
+    $('team-match-net').value = games.teamMatch.net ? 'net' : 'gross';
+  }
+
+  // Team low ball
+  if (games.teamLowball) {
+    if (games.teamLowball.value != null) $('team-lowball-value').value = games.teamLowball.value;
+    $('team-lowball-net').value = games.teamLowball.net ? 'net' : 'gross';
+  }
+
+  // Par 3 Greenie (with embedded Buddy Fucker)
+  if (games.p3greenie) {
+    if (games.p3greenie.value != null) $('p3greenie-value').value = games.p3greenie.value;
+    $('p3greenie-bf-enabled').checked = games.p3greenie.bfEnabled !== false;
+    if (games.p3greenie.bfValue != null) $('p3greenie-bf-value').value = games.p3greenie.bfValue;
+  }
+
+  // Junk: enable each individual checkbox + value
+  if (games.junk) {
+    JUNK_TYPES.forEach(j => {
+      const enabled = games.junk[j.id] !== undefined;
+      const cb = $('junk-' + j.id);
+      if (cb) cb.checked = enabled;
+      if (enabled) {
+        const valInp = $('junk-val-' + j.id);
+        if (valInp) valInp.value = games.junk[j.id];
+      }
+    });
+  }
+
+  // Restore per-game participant sets. Two sources:
+  //   - games.X.participantNames (saved tourneys, names) — preferred, stable
+  //   - games.X.participants     (live in-progress rounds, IDs)
+  // The picker stores names internally.
+  if (!state.gameParticipants) state.gameParticipants = {};
+  PARTICIPANT_GAME_KEYS.forEach(spec => {
+    const cfgKey = ({
+      'skins': 'skins', 'nassau': 'nassau', 'stroke': 'stroke', 'banker': 'banker',
+      'vegas': 'vegas', 'dvegas': 'dvegas', 'sixes': 'sixes', 'wolf': 'wolf',
+      'match': 'match', 'p3greenie': 'p3greenie', 'junk': 'junk'
+    })[spec.key];
+    state.gameParticipants[spec.key] = new Set();
+    if (!cfgKey || !games[cfgKey]) return;
+    const cfg = games[cfgKey];
+    if (Array.isArray(cfg.participantNames)) {
+      cfg.participantNames.forEach(name => state.gameParticipants[spec.key].add(name));
+    } else if (Array.isArray(cfg.participants)) {
+      cfg.participants.forEach(pid => {
+        const p = (config.players || []).find(pl => pl.id === pid);
+        if (p) state.gameParticipants[spec.key].add(p.name);
+      });
+    }
+  });
+  // Re-render with the restored sets
+  renderParticipantPickers();
+}
+
+function gatherSetup() {
+  const course = $('course-name').value.trim() || 'Untitled course';
+  const pars = [];
+  $('par-grid').querySelectorAll('input').forEach(inp => pars.push(parseInt(inp.value) || 4));
+  const sis = [];
+  $('si-grid').querySelectorAll('input').forEach(inp => sis.push(parseInt(inp.value) || 0));
+  // Tees: array of {label, rating, slope}. Only keep entries with a non-empty
+  // label AND both rating + slope filled in (a partial entry is useless for
+  // handicap math). The picker validation tolerates 0 tees — round still works
+  // for betting, just no GHIN tracking.
+  const tees = getCurrentTees().filter(t => t.label && t.rating != null && t.slope != null);
+
+  const players = [];
+  $('players-list').querySelectorAll('.player-row').forEach((row, i) => {
+    const name = row.querySelector('input[type=text]').value.trim();
+    const hcp = parseInt(row.querySelector('input[type=number]').value) || 0;
+    if (name) {
+      const teeLabel = (state.playerTees && state.playerTees[name]) || (tees.length === 1 ? tees[0].label : null);
+      players.push({
+        id: 'p' + i + '-' + Date.now() + '-' + Math.random().toString(36).slice(2,6),
+        name,
+        hcp,
+        teeLabel: teeLabel || null
+      });
+    }
+  });
+
+  if (players.length < 2) {
+    showToast('Need at least 2 players with names');
+    return null;
+  }
+
+  // Handicap rules: basis (full vs lowest), percentage, no-strokes-on-par-3s
+  const hcpBasis = $('hcp-basis').value || 'full';
+  const hcpPct = parseInt($('hcp-pct').value) || 100;
+  const noPar3Strokes = $('hcp-no-par3-strokes').checked;
+
+  // Compute effective HCP per player based on basis and percentage
+  const minHcp = Math.min(...players.map(p => p.hcp));
+  players.forEach(p => {
+    p.rawHcp = p.hcp; // remember raw for display
+    let base = p.hcp;
+    if (hcpBasis === 'lowest') base = Math.max(0, p.hcp - minHcp);
+    p.hcp = Math.round(base * hcpPct / 100);
+  });
+  const hcpRules = { basis: hcpBasis, pct: hcpPct, noPar3Strokes };
+
+  const games = {};
+  if ($('game-skins').checked) {
+    games.skins = {
+      value: parseFloat($('skin-value').value) || 0,
+      tieRule: $('skin-carry').value,
+      require: $('skin-require').value || 'none'
+    };
+  }
+  if ($('game-nassau').checked) {
+    // Multi-instance: each Nassau is its own pair-bet. Validate each instance has 2 distinct players.
+    const validInstances = [];
+    for (let i = 0; i < (state.nassauInstances || []).length; i++) {
+      const inst = state.nassauInstances[i];
+      if (!inst.pair || inst.pair.length !== 2) {
+        showToast(`Nassau ${i + 1} needs exactly 2 players`);
+        return null;
+      }
+      const partIds = inst.pair.map(name => {
+        const p = players.find(pl => pl.name === name);
+        return p ? p.id : null;
+      }).filter(Boolean);
+      if (partIds.length !== 2) {
+        showToast(`Nassau ${i + 1}: pair includes a player not in the round`);
+        return null;
+      }
+      validInstances.push({
+        value: inst.value || 0,
+        format: inst.format || 'stroke',
+        allowHuckle: inst.allowHuckle !== false,
+        birdiePay: inst.birdiePay || 0,
+        eaglePay: inst.eaglePay || 0,
+        hioPay: inst.hioPay || 0,
+        participants: partIds,
+        participantNames: inst.pair.slice()
+      });
+    }
+    if (validInstances.length === 0) {
+      showToast('Add at least one Nassau pair');
+      return null;
+    }
+    // Use the first instance as the legacy "single" config (back-compat for renderers
+    // that still reference cfg.value etc. directly), AND store the full list.
+    games.nassau = Object.assign({}, validInstances[0], { instances: validInstances });
+  }
+  if ($('game-stroke').checked) {
+    games.stroke = { buyin: parseFloat($('stroke-value').value) || 0, net: $('stroke-net').value === 'net' };
+  }
+  if ($('game-banker').checked) {
+    games.banker = {
+      net: $('banker-net').value === 'net',
+      loserStart: parseInt($('banker-loser-start').value) || 16,
+      birdieDouble: $('banker-birdie-double').value || 'anyone',
+      order: $('banker-order').value || 'setup'
+    };
+  }
+  if ($('game-vegas').checked) {
+    if (players.length !== 4) {
+      showToast('Vegas requires exactly 4 players');
+      return null;
+    }
+    games.vegas = {
+      value: parseFloat($('vegas-value').value) || 0,
+      net: $('vegas-net').value === 'net',
+      rotate: $('vegas-rotate').value === 'fixed' ? 'fixed' : 'rotate'
+    };
+  }
+  if ($('game-dvegas').checked) {
+    if (players.length !== 4) {
+      showToast('Dynamic Vegas requires exactly 4 players');
+      return null;
+    }
+    games.dvegas = {
+      value: parseFloat($('dvegas-value').value) || 0,
+      net: $('dvegas-net').value === 'net'
+    };
+  }
+  if ($('game-sixes').checked) {
+    if (players.length !== 4) {
+      showToast('6\'s requires exactly 4 players');
+      return null;
+    }
+    games.sixes = { value: parseFloat($('sixes-value').value) || 0, net: $('sixes-net').value === 'net' };
+  }
+  if ($('game-wolf').checked) {
+    games.wolf = { value: parseFloat($('wolf-value').value) || 0 };
+  }
+  if ($('game-match').checked) {
+    // Multi-instance: each match is its own 1v1 pair-bet.
+    const validInstances = [];
+    for (let i = 0; i < (state.matchInstances || []).length; i++) {
+      const inst = state.matchInstances[i];
+      if (!inst.pair || inst.pair.length !== 2) {
+        showToast(`Match ${i + 1} needs exactly 2 players`);
+        return null;
+      }
+      const partIds = inst.pair.map(name => {
+        const p = players.find(pl => pl.name === name);
+        return p ? p.id : null;
+      }).filter(Boolean);
+      if (partIds.length !== 2) {
+        showToast(`Match ${i + 1}: pair includes a player not in the round`);
+        return null;
+      }
+      validInstances.push({
+        value: inst.value || 0,
+        net: inst.net !== false,
+        participants: partIds,
+        participantNames: inst.pair.slice()
+      });
+    }
+    if (validInstances.length === 0) {
+      showToast('Add at least one Match Play pair');
+      return null;
+    }
+    games.match = Object.assign({}, validInstances[0], { instances: validInstances });
+  }
+  if ($('game-team-match').checked) {
+    if (players.length < 2 || players.length % 2 !== 0) {
+      showToast('Team match play needs an even number of players (2+)');
+      return null;
+    }
+    const teams = buildTeamAssignment(players, 'teamMatch');
+    if (!teams) {
+      showToast('Team match: teams must be even. Check the team picker.');
+      return null;
+    }
+    games.teamMatch = {
+      value: parseFloat($('team-match-value').value) || 0,
+      net: $('team-match-net').value === 'net',
+      teamA: teams.teamA, // array of player IDs
+      teamB: teams.teamB
+    };
+  }
+  if ($('game-team-lowball').checked) {
+    if (players.length < 2 || players.length % 2 !== 0) {
+      showToast('Team low ball needs an even number of players (2+)');
+      return null;
+    }
+    const teams = buildTeamAssignment(players, 'teamLowball');
+    if (!teams) {
+      showToast('Team low ball: teams must be even. Check the team picker.');
+      return null;
+    }
+    games.teamLowball = {
+      value: parseFloat($('team-lowball-value').value) || 0,
+      net: $('team-lowball-net').value === 'net',
+      teamA: teams.teamA,
+      teamB: teams.teamB
+    };
+  }
+  if ($('game-p3greenie').checked) {
+    games.p3greenie = {
+      value: parseFloat($('p3greenie-value').value) || 0,
+      bfEnabled: $('p3greenie-bf-enabled').checked,
+      bfValue: parseFloat($('p3greenie-bf-value').value) || 0
+    };
+  }
+  if ($('game-junk').checked) {
+    const junks = {};
+    JUNK_TYPES.forEach(j => {
+      if ($('junk-' + j.id).checked) {
+        junks[j.id] = parseFloat($('junk-val-' + j.id).value) || 0;
+      }
+    });
+    games.junk = junks;
+  }
+
+  // Inject participant lists into each enabled game's config. The picker stores
+  // names; here we map them to player IDs (which the calc functions use).
+  // Reject if any enabled game has too few/many participants for its rules.
+  // Team-match and team-lowball derive participants from their team picker
+  // and don't need a separate participants list.
+  for (const spec of PARTICIPANT_GAME_KEYS) {
+    const cfgKey = ({
+      'skins': 'skins', 'nassau': 'nassau', 'stroke': 'stroke', 'banker': 'banker',
+      'vegas': 'vegas', 'dvegas': 'dvegas', 'sixes': 'sixes', 'wolf': 'wolf',
+      'match': 'match', 'p3greenie': 'p3greenie', 'junk': 'junk'
+    })[spec.key];
+    if (!cfgKey || !games[cfgKey]) continue;
+    const partSet = (state.gameParticipants && state.gameParticipants[spec.key]) || new Set();
+    if (partSet.size < spec.min) {
+      showToast(`${spec.label.replace(' participants','')} needs at least ${spec.min} player${spec.min > 1 ? 's' : ''} selected`);
+      return null;
+    }
+    if (spec.max && partSet.size > spec.max) {
+      showToast(`${spec.label.replace(' participants','')} allows at most ${spec.max} player${spec.max > 1 ? 's' : ''}`);
+      return null;
+    }
+    // Map names → ids
+    const ids = [];
+    Array.from(partSet).forEach(name => {
+      const p = players.find(pl => pl.name === name);
+      if (p) ids.push(p.id);
+    });
+    games[cfgKey].participants = ids;
+  }
+
+  return { course, pars, sis, tees, players, games, hcpRules };
+}
+
+// ============================================================
+// SCORE PANEL
+// ============================================================
+function renderScoreEntry() {
+  const g = state.game;
+  if (!g) return;
+  const h = state.currentHole;
+  $('cur-hole').textContent = h;
+  $('cur-par').textContent = g.pars[h - 1];
+  $('cur-si').textContent = g.sis ? g.sis[h - 1] : '—';
+  $('score-code').textContent = g.code;
+  $('last-sync').textContent = 'synced ' + new Date(g.updatedAt).toLocaleTimeString();
+
+  // Render game-specific banners (Banker, Wolf)
+  renderGameBanners();
+
+  // Score entries
+  const container = $('score-entries');
+  container.innerHTML = '';
+  g.players.forEach(p => {
+    const score = (g.scores[p.id] && g.scores[p.id][h - 1] != null) ? g.scores[p.id][h - 1] : null;
+    const strokes = g.sis ? strokesOnHole(p.hcp, g.sis[h - 1], g.pars[h - 1], g.hcpRules) : 0;
+    const row = document.createElement('div');
+    row.className = 'score-entry';
+    row.innerHTML = `
+      <div>
+        <div class="name">${p.name}</div>
+        <div class="meta">HCP ${p.hcp}${strokes > 0 ? ` · gets ${strokes} stroke${strokes > 1 ? 's' : ''}` : ''}</div>
+      </div>
+      <div class="score-stepper" style="position:relative">
+        ${strokes > 0 ? `<span class="pop-dot${strokes > 1 ? ' pop-multi' : ''}" title="${strokes} stroke${strokes > 1 ? 's' : ''} on this hole"></span>` : ''}
+        <button data-action="dec" data-pid="${p.id}">−</button>
+        <div class="val ${score === null ? 'empty' : ''}" id="val-${p.id}">${score === null ? '—' : score}</div>
+        <button data-action="inc" data-pid="${p.id}">+</button>
+      </div>
+    `;
+    container.appendChild(row);
+  });
+  container.querySelectorAll('button').forEach(btn => {
+    btn.onclick = () => handleScoreChange(btn.dataset.pid, btn.dataset.action);
+  });
+
+  // Junk entry
+  renderJunkEntry();
+  // Par 3 Greenie entry (only renders on par 3s when game is enabled)
+  renderP3GreenieEntry();
+
+  // Hole nav
+  $('prev-hole').disabled = h === 1;
+  $('next-hole').disabled = h === 18;
+
+  // Auto-advance button: show when all players scored, on holes 1-17
+  const allScored = g.players.every(p => g.scores[p.id] && g.scores[p.id][h - 1] != null);
+  const advBtn = $('auto-advance-btn');
+  if (advBtn) advBtn.style.display = (allScored && h < 18) ? 'block' : 'none';
+
+  // On hole 18, swap "End round early" for a primary "Finish round" button so
+  // the user can complete the round directly from the score screen instead of
+  // having to navigate to the Board first.
+  const endEarlyBtn = $('btn-end-early');
+  if (endEarlyBtn) {
+    if (h === 18 && allScored) {
+      endEarlyBtn.textContent = '🏁 Finish round';
+      endEarlyBtn.classList.remove('danger');
+      endEarlyBtn.classList.add('primary');
+      endEarlyBtn.dataset.mode = 'finish';
+    } else {
+      endEarlyBtn.textContent = '⏹ End round early';
+      endEarlyBtn.classList.remove('primary');
+      endEarlyBtn.classList.add('danger');
+      endEarlyBtn.dataset.mode = 'early';
+    }
+  }
+}
+
+function renderGameBanners() {
+  const g = state.game;
+  const h = state.currentHole;
+  const banners = $('game-banners');
+  banners.innerHTML = '';
+
+  // NASSAU + HUCKLE banner — shows current segment standings + a button to call a Huckle
+  if (g.games.nassau && g.games.nassau.allowHuckle !== false && getParticipants(g, g.games.nassau).length >= 2) {
+    const eligible = computeEligibleHuckles(g, h);
+    const activeHuckles = (g.huckleData && g.huckleData.huckles) || [];
+    if (eligible.length > 0 || activeHuckles.length > 0) {
+      const div = document.createElement('div');
+      div.className = 'turn-banner';
+      let inner = '';
+      if (eligible.length > 0) {
+        inner += `<div style="display:flex;align-items:center;gap:8px">
+          <div style="flex:1">
+            <strong>📣 Huckle available</strong>
+            <div class="small-text" style="font-size:11px">${eligible.length} player${eligible.length > 1 ? 's' : ''} down 2+ and can call a Huckle</div>
+          </div>
+          <button class="small primary" id="btn-huckle-open">Call Huckle</button>
+        </div>`;
+      }
+      // Show active huckles as a brief list
+      if (activeHuckles.length > 0) {
+        inner += `<div class="small-text" style="margin-top:6px;font-size:11px">
+          <strong>Active huckles:</strong> ${activeHuckles.map(h => {
+            const c = g.players.find(p => p.id === h.callerId);
+            const o = g.players.find(p => p.id === h.opponentId);
+            return `${c ? c.name : '?'} vs ${o ? o.name : '?'} (${h.segment}, from h${h.callHole})`;
+          }).join(' · ')}
+        </div>`;
+      }
+      div.innerHTML = inner;
+      banners.appendChild(div);
+      if (eligible.length > 0) {
+        const btn = $('btn-huckle-open');
+        if (btn) btn.onclick = () => openHuckleModal(eligible);
+      }
+    }
+  }
+
+  // BANKER banner
+  if (g.games.banker) {
+    if (!g.bankerData) g.bankerData = { holes: {}, picks: {} };
+    if (!g.bankerData.picks) g.bankerData.picks = {};
+    const hd = g.bankerData.holes[h] || {};
+    const cfg = g.games.banker;
+    const loserStart = cfg.loserStart || 16;
+    const isLoserPickHole = h >= loserStart;
+    const banker = getBankerForHole(g, h);
+
+    const presses = hd.presses || [];
+    const playerBets = hd.playerBets || {}; // { playerId: betAmount }
+    const pickMade = !!g.bankerData.picks[h];
+
+    const div = document.createElement('div');
+    div.className = 'turn-banner';
+
+    let bannerHtml = '';
+    if (isLoserPickHole && !pickMade) {
+      const standings = bankerStandingsThrough(g, h - 1);
+      bannerHtml = `
+        <div><strong>Hole ${h} — Loser picks banker</strong></div>
+        <div class="small-text" style="margin-bottom:6px">Tap a player to set them as banker. Players are listed worst → best standing.</div>
+        <div class="banker-pick-list" id="banker-pick-list"></div>
+        <div class="small-text" style="margin-top:6px">If everyone passes, default rotation: <strong>${banker ? banker.name : '—'}</strong></div>
+      `;
+    } else {
+      bannerHtml = `
+        <div style="display:flex;align-items:center;gap:8px">
+          <div style="flex:1"><strong>Banker:</strong> ${banker ? banker.name : '—'}${isLoserPickHole && pickMade ? ' <span class="small-text">(picked)</span>' : ''}</div>
+          ${isLoserPickHole && pickMade ? '<button class="small" id="banker-clear-pick">Change pick</button>' : ''}
+        </div>
+        <div id="banker-player-bets" style="margin-top:8px"></div>
+        ${(() => {
+          const reps = hd.bankerRepresses || 0;
+          const active = presses.filter(p => p.pressed);
+          if (active.length === 0 && reps === 0) return '';
+          const bankerMult = Math.pow(2, reps);
+          if (active.length === 0) {
+            // Banker pressed with no player presses — all bets multiplied
+            return `<div class="banker-press-list">Banker pressed ${reps}x — all bets at ${bankerMult}x</div>`;
+          }
+          const m = 2 * bankerMult;
+          const names = active.map(p => {
+            const pl = g.players.find(x => x.id === p.playerId);
+            return pl ? pl.name : '';
+          }).filter(Boolean).join(', ');
+          return `<div class="banker-press-list">Active presses (${m}x): ${names}${reps > 0 ? ` · banker pressed ${reps}x → others at ${bankerMult}x` : ''}</div>`;
+        })()}
+        ${(() => {
+          // Live birdie-double indicator
+          const mode = cfg.birdieDouble || 'anyone';
+          if (mode === 'off') return '';
+          const par = g.pars[h - 1];
+          const birds = g.players.filter(p => {
+            const s = (g.scores[p.id] && g.scores[p.id][h - 1] != null) ? g.scores[p.id][h - 1] : null;
+            return s !== null && s <= par - 1;
+          });
+          if (birds.length === 0) return '';
+          const names = birds.map(p => p.name).join(', ');
+          if (mode === 'all') {
+            return `<div class="banker-press-list" style="color:var(--gold)">🐦 Birdie auto-double active (${names}) — all matches 2x</div>`;
+          }
+          return `<div class="banker-press-list" style="color:var(--gold)">🐦 Birdie auto-double (${names}) — affected matches doubled</div>`;
+        })()}
+      `;
+    }
+    div.innerHTML = bannerHtml;
+    banners.appendChild(div);
+
+    if (isLoserPickHole && !pickMade) {
+      const pickList = $('banker-pick-list');
+      const standings = bankerStandingsThrough(g, h - 1);
+      const ranked = [...g.players].sort((a, b) => (standings[a.id] || 0) - (standings[b.id] || 0));
+      ranked.forEach((p, idx) => {
+        const standing = standings[p.id] || 0;
+        const cls = standing < -0.005 ? 'neg' : (standing > 0.005 ? 'pos' : 'zero');
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:6px 0;border-top:' + (idx === 0 ? 'none' : '1px solid var(--border)') + ';';
+        row.innerHTML = `
+          <span style="flex:1;font-size:13px"><strong>${p.name}</strong> <span class="money ${cls}" style="font-variant-numeric:tabular-nums">${signed(standing)}</span></span>
+          <button class="small" data-pick="${p.id}">Take bank</button>
+        `;
+        pickList.appendChild(row);
+      });
+      pickList.querySelectorAll('[data-pick]').forEach(btn => {
+        btn.onclick = async () => {
+          g.bankerData.picks[h] = btn.dataset.pick;
+          await saveGame(g);
+          renderGameBanners();
+        };
+      });
+    } else {
+      if ($('banker-clear-pick')) {
+        $('banker-clear-pick').onclick = async () => {
+          delete g.bankerData.picks[h];
+          await saveGame(g);
+          renderGameBanners();
+        };
+      }
+
+      // Per-player bet rows + press controls
+      const playerBetsCtr = $('banker-player-bets');
+      if (playerBetsCtr) {
+        const bankerRepresses = (hd.bankerRepresses || 0);
+        const repressMult = Math.pow(2, bankerRepresses);
+        const anyPlayerPressed = presses.some(p => p.pressed);
+
+        const header = document.createElement('div');
+        header.className = 'small-text';
+        header.style.cssText = 'margin-bottom:6px;color:var(--text-muted)';
+        header.textContent = 'Each player picks their bet. Player press doubles their own bet. Banker press doubles every player\'s bet (stacks on top of player presses).';
+        playerBetsCtr.appendChild(header);
+
+        g.players.forEach(p => {
+          if (banker && p.id === banker.id) return;
+          // No default — input stays blank until the user enters a value.
+          // Stored value (playerBets[p.id]) is shown if it exists, otherwise empty.
+          const hasBet = playerBets[p.id] != null;
+          const playerBet = hasBet ? playerBets[p.id] : 0;
+          const existing = presses.find(x => x.playerId === p.id);
+          const pressed = existing && existing.pressed;
+          // Banker presses double EVERYONE's bets (pressed players go on top of that)
+          const playerMult = pressed ? (2 * repressMult) : repressMult;
+          const wager = playerBet * playerMult;
+
+          let statusText;
+          if (!hasBet) {
+            statusText = '<em style="color:var(--text-muted)">no bet set</em>';
+          } else if (playerMult > 1) {
+            statusText = `${playerMult}x ($${wager.toFixed(2)})${pressed ? ' · pressed' : ''}`;
+          } else {
+            statusText = `bet $${playerBet.toFixed(2)}`;
+          }
+
+          const row = document.createElement('div');
+          row.style.cssText = 'display:flex;align-items:center;gap:6px;padding:8px 0;border-top:1px solid var(--border);flex-wrap:wrap';
+          row.innerHTML = `
+            <div style="flex:1;min-width:90px;font-size:13px">
+              <strong>${p.name}</strong>
+              <div class="small-text" style="font-size:11px">${statusText}</div>
+            </div>
+            <span class="small-text">$</span>
+            <input type="number" class="banker-pbet-input" data-pid="${p.id}" value="${hasBet ? playerBet : ''}" placeholder="—" min="0" step="0.5" style="width:64px">
+            <button class="small press-btn" data-action="toggle-press" data-pid="${p.id}">
+              ${pressed ? '✓ Pressed' : 'Press'}
+            </button>
+          `;
+          playerBetsCtr.appendChild(row);
+        });
+
+        // Banker press / re-press control row — always available.
+        // If players have pressed, this re-presses (doubles their pressed bets again).
+        // If nobody has pressed, the banker can still press, which doubles all base bets.
+        const bankerRow = document.createElement('div');
+        bankerRow.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px 0 4px;border-top:1px solid var(--border);margin-top:4px';
+        const bankerMult = Math.pow(2, bankerRepresses);
+        let statusLine;
+        if (bankerRepresses === 0) {
+          statusLine = anyPlayerPressed
+            ? 'No banker press — pressed players at 2x'
+            : 'No banker press — bets at 1x';
+        } else {
+          statusLine = anyPlayerPressed
+            ? `Banker pressed ${bankerRepresses}x → pressed players now at ${2 * bankerMult}x, others at ${bankerMult}x`
+            : `Banker pressed ${bankerRepresses}x → all bets at ${bankerMult}x`;
+        }
+        bankerRow.innerHTML = `
+          <div style="flex:1;font-size:13px">
+            <strong>${banker.name}</strong> (banker)
+            <div class="small-text" style="font-size:11px">${statusLine}</div>
+          </div>
+          <button class="small press-btn" data-action="banker-repress" style="background:var(--info-light);color:var(--info);border-color:var(--info)">
+            ${bankerRepresses === 0 ? 'Banker press' : 'Press again'}
+          </button>
+          ${bankerRepresses > 0 ? `<button class="small" data-action="banker-undo" style="background:transparent;color:var(--text-muted)">Undo</button>` : ''}
+        `;
+        playerBetsCtr.appendChild(bankerRow);
+
+        // Wire per-player bet inputs
+        playerBetsCtr.querySelectorAll('.banker-pbet-input').forEach(inp => {
+          inp.onchange = async (e) => {
+            const pid = inp.dataset.pid;
+            const raw = e.target.value.trim();
+            // Blank input → clear this player's bet for the hole
+            if (raw === '') {
+              if (g.bankerData.holes[h] && g.bankerData.holes[h].playerBets) {
+                delete g.bankerData.holes[h].playerBets[pid];
+              }
+              await saveGame(g);
+              renderGameBanners();
+              return;
+            }
+            const v = parseFloat(raw);
+            if (isNaN(v) || v < 0) {
+              showToast('Bet must be $0 or more');
+              e.target.value = playerBets[pid] != null ? playerBets[pid] : '';
+              return;
+            }
+            if (!g.bankerData.holes[h]) g.bankerData.holes[h] = {};
+            if (!g.bankerData.holes[h].playerBets) g.bankerData.holes[h].playerBets = {};
+            g.bankerData.holes[h].playerBets[pid] = v;
+            await saveGame(g);
+            renderGameBanners();
+          };
+        });
+
+        // Wire press buttons
+        playerBetsCtr.querySelectorAll('button[data-action]').forEach(btn => {
+          btn.onclick = async () => {
+            const action = btn.dataset.action;
+            const pid = btn.dataset.pid;
+            if (!g.bankerData.holes[h]) g.bankerData.holes[h] = {};
+            if (!g.bankerData.holes[h].presses) g.bankerData.holes[h].presses = [];
+            const pl = g.bankerData.holes[h].presses;
+
+            if (action === 'toggle-press') {
+              let entry = pl.find(x => x.playerId === pid);
+              if (!entry) {
+                pl.push({ playerId: pid, pressed: true });
+              } else {
+                entry.pressed = !entry.pressed;
+                if (!entry.pressed) {
+                  const idx = pl.findIndex(x => x.playerId === pid);
+                  if (idx >= 0) pl.splice(idx, 1);
+                }
+              }
+            } else if (action === 'banker-repress') {
+              g.bankerData.holes[h].bankerRepresses = (g.bankerData.holes[h].bankerRepresses || 0) + 1;
+            } else if (action === 'banker-undo') {
+              g.bankerData.holes[h].bankerRepresses = Math.max(0, (g.bankerData.holes[h].bankerRepresses || 0) - 1);
+            }
+
+            await saveGame(g);
+            renderGameBanners();
+          };
+        });
+      }
+    }
+  }
+
+  // WOLF / CAPTAIN banner
+  if (g.games.wolf && g.players.length >= 3) {
+    if (!g.wolfData) g.wolfData = { holes: {} };
+    const captainIdx = (h - 1) % g.players.length;
+    const captain = g.players[captainIdx];
+    const hd = g.wolfData.holes[h] || {};
+
+    const div = document.createElement('div');
+    div.className = 'turn-banner';
+    let body = `<div><strong>Captain:</strong> ${captain.name}</div>`;
+    if (hd.choice === 'lone') {
+      body += `<div class="small-text">Going Lone Wolf (2x)</div>`;
+    } else if (hd.choice === 'blind') {
+      body += `<div class="small-text">Blind Lone Wolf (3x) — called before tee</div>`;
+    } else if (hd.choice === 'partner' && hd.partnerId) {
+      const p = g.players.find(x => x.id === hd.partnerId);
+      body += `<div class="small-text">Partner: ${p ? p.name : '—'}</div>`;
+    } else {
+      body += `<div class="small-text">No pick yet</div>`;
+    }
+    body += `<div class="controls">
+      <button data-wolf-action="pick">Pick partner</button>
+      <button data-wolf-action="lone">Lone Wolf (2x)</button>
+      <button data-wolf-action="blind">Blind (3x)</button>
+      ${hd.choice ? '<button data-wolf-action="clear">Clear</button>' : ''}
+    </div>`;
+    div.innerHTML = body;
+    banners.appendChild(div);
+
+    div.querySelectorAll('[data-wolf-action]').forEach(btn => {
+      btn.onclick = async () => {
+        const a = btn.dataset.wolfAction;
+        if (!g.wolfData.holes[h]) g.wolfData.holes[h] = {};
+        if (a === 'lone') {
+          g.wolfData.holes[h] = { choice: 'lone' };
+          await saveGame(g);
+          renderGameBanners();
+        } else if (a === 'blind') {
+          g.wolfData.holes[h] = { choice: 'blind' };
+          await saveGame(g);
+          renderGameBanners();
+        } else if (a === 'clear') {
+          g.wolfData.holes[h] = {};
+          await saveGame(g);
+          renderGameBanners();
+        } else if (a === 'pick') {
+          openWolfPickModal(captain, h);
+        }
+      };
+    });
+  }
+
+  // 6's pairing banner
+  if (g.games.sixes) {
+    const sParts = getParticipants(g, g.games.sixes);
+    if (sParts.length === 4) {
+      const seg = h <= 6 ? 0 : (h <= 12 ? 1 : 2);
+      const pairings = [
+        [[0,1], [2,3]],
+        [[0,2], [1,3]],
+        [[0,3], [1,2]]
+      ][seg];
+      const t1 = pairings[0].map(i => sParts[i].name).join(' & ');
+      const t2 = pairings[1].map(i => sParts[i].name).join(' & ');
+      const div = document.createElement('div');
+      div.className = 'turn-banner';
+      div.innerHTML = `<div><strong>6's segment ${seg+1}:</strong> ${t1} vs ${t2}</div>
+        <div class="small-text">Holes ${seg*6+1}-${seg*6+6} · best ball</div>`;
+      banners.appendChild(div);
+    }
+  }
+
+  // Vegas pairing banner (skip if 6's already shown — same teams)
+  if (g.games.vegas && !g.games.sixes) {
+    const vParts = getParticipants(g, g.games.vegas);
+    if (vParts.length === 4) {
+      const isFixed = g.games.vegas.rotate === 'fixed';
+      const seg = isFixed ? 0 : (h <= 6 ? 0 : (h <= 12 ? 1 : 2));
+      const pairings = [
+        [[0,1], [2,3]],
+        [[0,2], [1,3]],
+        [[0,3], [1,2]]
+      ][seg];
+      const t1 = pairings[0].map(i => vParts[i].name).join(' & ');
+      const t2 = pairings[1].map(i => vParts[i].name).join(' & ');
+      const div = document.createElement('div');
+      div.className = 'turn-banner';
+      // Look back through prior Vegas results to count consecutive ties leading
+      // into this hole — used to show the pending multiplier.
+      const vRes = calcVegas(g);
+      const vMult = vRes ? pendingTieMultiplier(vRes.holeResults, h) : 1;
+      const vMultLine = vMult > 1 ? `<div style="color:var(--gold);font-weight:600;margin-top:2px">🔥 This hole is ${vMult}x — tie streak active</div>` : '';
+      const segLabel = isFixed ? 'Fixed teams · all 18 holes' : `Holes ${seg*6+1}-${seg*6+6}`;
+      div.innerHTML = `<div><strong>Vegas teams:</strong> ${t1} vs ${t2}</div>
+        ${vMultLine}
+        <div class="small-text">${segLabel}</div>`;
+      banners.appendChild(div);
+    }
+  }
+
+  // Dynamic Vegas pairing banner — teams shift each hole based on previous
+  // hole's high & low scorers. Hole 1 is seeded random (deterministic by code).
+  if (g.games.dvegas) {
+    const dvParts = getParticipants(g, g.games.dvegas);
+    if (dvParts.length === 4) {
+      const dv = calcDynamicVegas(g);
+      if (dv && dv.teamsByHole && dv.teamsByHole[h - 1]) {
+        const teams = dv.teamsByHole[h - 1];
+        const t1 = teams[0].map(id => (g.players.find(p => p.id === id) || {}).name).join(' & ');
+        const t2 = teams[1].map(id => (g.players.find(p => p.id === id) || {}).name).join(' & ');
+        const div = document.createElement('div');
+        div.className = 'turn-banner';
+        const hint = h === 1
+          ? 'Hole 1 random pairing'
+          : `Based on hole ${h - 1}'s high &amp; low scorers`;
+        const dvMult = pendingTieMultiplier(dv.holeResults, h);
+        const dvMultLine = dvMult > 1 ? `<div style="color:var(--gold);font-weight:600;margin-top:2px">🔥 This hole is ${dvMult}x — tie streak active</div>` : '';
+        div.innerHTML = `<div><strong>Dynamic Vegas:</strong> ${t1} vs ${t2}</div>
+          ${dvMultLine}
+          <div class="small-text">${hint}</div>`;
+        banners.appendChild(div);
+      }
+    }
+  }
+
+  // Team match play / Team low ball banner — fixed teams chosen at setup
+  if (g.games.teamMatch || g.games.teamLowball) {
+    const cfg = g.games.teamMatch || g.games.teamLowball;
+    if (cfg && cfg.teamA && cfg.teamB && cfg.teamA.length === cfg.teamB.length) {
+      const teamA = cfg.teamA.map(id => g.players.find(p => p.id === id)).filter(Boolean);
+      const teamB = cfg.teamB.map(id => g.players.find(p => p.id === id)).filter(Boolean);
+      const t1 = teamA.map(p => p.name).join(' & ');
+      const t2 = teamB.map(p => p.name).join(' & ');
+      const games = [];
+      if (g.games.teamMatch) games.push('Team match');
+      if (g.games.teamLowball) games.push('Team low ball');
+      const div = document.createElement('div');
+      div.className = 'turn-banner';
+      div.innerHTML = `<div><strong>${games.join(' / ')}:</strong> ${t1} vs ${t2}</div>
+        <div class="small-text">${teamA.length}v${teamB.length} · best ball</div>`;
+      banners.appendChild(div);
+    }
+  }
+}
+
+function openWolfPickModal(captain, hole) {
+  const g = state.game;
+  $('wolf-hole').textContent = hole;
+  $('wolf-captain').textContent = captain.name;
+  const cont = $('wolf-pick-options');
+  cont.innerHTML = '<div class="wolf-pick-grid"></div>';
+  const grid = cont.querySelector('.wolf-pick-grid');
+  g.players.forEach(p => {
+    if (p.id === captain.id) return;
+    const btn = document.createElement('button');
+    btn.textContent = p.name;
+    btn.onclick = async () => {
+      if (!g.wolfData.holes[hole]) g.wolfData.holes[hole] = {};
+      g.wolfData.holes[hole] = { choice: 'partner', partnerId: p.id };
+      await saveGame(g);
+      $('wolf-modal').classList.remove('show');
+      renderGameBanners();
+    };
+    grid.appendChild(btn);
+  });
+  $('wolf-modal').classList.add('show');
+}
+
+function renderJunkEntry() {
+  const g = state.game;
+  if (!g.games.junk || Object.keys(g.games.junk).length === 0) {
+    $('junk-entry-section').innerHTML = '';
+    return;
+  }
+  const h = state.currentHole;
+  if (!g.junkData) g.junkData = {};
+  if (!g.junkData[h]) g.junkData[h] = {};
+
+  // Migrate any legacy single-player entries to arrays so we can multi-select.
+  // Also drop any legacy 'buddyfucker' entries — that lives in p3greenie now.
+  Object.keys(g.junkData[h]).forEach(jt => {
+    const v = g.junkData[h][jt];
+    if (v == null) {
+      delete g.junkData[h][jt];
+    } else if (jt === 'buddyfucker') {
+      delete g.junkData[h][jt]; // legacy cleanup
+    } else if (typeof v === 'string') {
+      g.junkData[h][jt] = [v];
+    } else if (!Array.isArray(v)) {
+      delete g.junkData[h][jt];
+    }
+  });
+
+  let html = `<div class="junk-section">
+    <div class="lbl">Junk this hole — tap players to toggle (multiple allowed)</div>`;
+  Object.keys(g.games.junk).forEach(jt => {
+    const jdef = JUNK_TYPES.find(x => x.id === jt);
+    if (!jdef) return;
+    const earners = g.junkData[h][jt] || [];
+    const earnerCount = earners.length;
+    html += `<div style="margin-bottom:8px">
+      <div style="font-size:12px;font-weight:500;margin-bottom:4px;display:flex;justify-content:space-between">
+        <span>${jdef.name} ($${g.games.junk[jt]} each)</span>
+        ${earnerCount > 0 ? `<span style="color:var(--gold);font-weight:600">${earnerCount} earner${earnerCount > 1 ? 's' : ''}</span>` : ''}
+      </div>
+      <div class="junk-row">`;
+    g.players.forEach(p => {
+      const active = earners.includes(p.id);
+      html += `<span class="junk-chip ${active ? 'active' : ''}" data-junk-type="${jt}" data-pid="${p.id}">${p.name}</span>`;
+    });
+    html += `</div></div>`;
+  });
+
+  html += `</div>`;
+  $('junk-entry-section').innerHTML = html;
+
+  $('junk-entry-section').querySelectorAll('.junk-chip').forEach(chip => {
+    chip.onclick = async () => {
+      const jt = chip.dataset.junkType;
+      const pid = chip.dataset.pid;
+      if (!g.junkData[h][jt]) g.junkData[h][jt] = [];
+      const list = g.junkData[h][jt];
+      const idx = list.indexOf(pid);
+      if (idx >= 0) {
+        list.splice(idx, 1);
+      } else {
+        list.push(pid);
+      }
+      if (list.length === 0) delete g.junkData[h][jt];
+      await saveGame(g);
+      renderJunkEntry();
+    };
+  });
+}
+
+// Par 3 Greenie + Buddy Fucker entry — only renders on par 3s when the game is on
+function renderP3GreenieEntry() {
+  const g = state.game;
+  const ctr = $('p3greenie-entry-section');
+  if (!ctr) return;
+  ctr.innerHTML = '';
+  if (!g.games.p3greenie) return;
+  const h = state.currentHole;
+  if (g.pars[h - 1] !== 3) return; // par 3s only
+
+  if (!g.p3greenieData) g.p3greenieData = {};
+  if (!g.p3greenieData[h]) g.p3greenieData[h] = { winners: [], threePutts: [] };
+  // Defensive normalization
+  if (!Array.isArray(g.p3greenieData[h].winners)) g.p3greenieData[h].winners = [];
+  if (!Array.isArray(g.p3greenieData[h].threePutts)) g.p3greenieData[h].threePutts = [];
+
+  const cfg = g.games.p3greenie;
+  const winners = g.p3greenieData[h].winners;
+  const threePutts = g.p3greenieData[h].threePutts;
+  const bfOn = cfg.bfEnabled !== false;
+
+  // Header + winner chips
+  const forfeitedCount = winners.filter(id => threePutts.includes(id)).length;
+  const paidCount = winners.length - forfeitedCount;
+  let html = `<div class="junk-section" style="border-top:1px solid var(--border);padding-top:10px;margin-top:10px">
+    <div class="lbl" style="color:var(--accent)">⛳ Par 3 Greenie ($${cfg.value} per other player) — closest to pin, must make par</div>
+    <div style="margin-bottom:8px">
+      <div style="font-size:12px;font-weight:500;margin-bottom:4px;display:flex;justify-content:space-between">
+        <span>Winner(s)</span>
+        ${winners.length > 0 ? `<span style="color:var(--gold);font-weight:600">${paidCount} paid${forfeitedCount > 0 ? ` · <span style="color:var(--danger)">${forfeitedCount} forfeit</span>` : ''}</span>` : ''}
+      </div>
+      <div class="junk-row">`;
+  g.players.forEach(p => {
+    const active = winners.includes(p.id);
+    const forfeited = active && threePutts.includes(p.id);
+    const extraStyle = forfeited ? 'text-decoration:line-through;opacity:0.6' : '';
+    html += `<span class="junk-chip ${active ? 'active' : ''}" data-p3g-action="winner" data-pid="${p.id}" style="${extraStyle}">${p.name}</span>`;
+  });
+  html += `</div></div>`;
+
+  // Buddy Fucker sub-row — only if enabled AND a winner is set
+  if (bfOn && winners.length > 0) {
+    html += `<div style="margin-top:10px;padding-top:8px;border-top:1px dashed var(--border)">
+      <div style="font-size:12px;font-weight:500;margin-bottom:4px;display:flex;justify-content:space-between">
+        <span>💩 Buddy Fucker — did the greenie winner 3-putt? <span class="small-text">(forfeits the greenie + pays $${cfg.bfValue} per other player)</span></span>
+        ${threePutts.length > 0 ? `<span style="color:var(--danger);font-weight:600">${threePutts.length} 3-putt</span>` : ''}
+      </div>
+      <div class="junk-row">`;
+    winners.forEach(pid => {
+      const p = g.players.find(x => x.id === pid);
+      if (!p) return;
+      const active = threePutts.includes(pid);
+      html += `<span class="junk-chip ${active ? 'active' : ''}" data-p3g-action="threeputt" data-pid="${pid}" style="${active ? 'background:var(--danger);color:white;border-color:var(--danger)' : ''}">${p.name} 3-putted</span>`;
+    });
+    html += `</div></div>`;
+  }
+
+  html += `</div>`;
+  ctr.innerHTML = html;
+
+  // Wire chip clicks
+  ctr.querySelectorAll('.junk-chip').forEach(chip => {
+    chip.onclick = async () => {
+      const action = chip.dataset.p3gAction;
+      const pid = chip.dataset.pid;
+      const list = action === 'winner' ? g.p3greenieData[h].winners : g.p3greenieData[h].threePutts;
+      const idx = list.indexOf(pid);
+      if (idx >= 0) list.splice(idx, 1);
+      else list.push(pid);
+
+      // If we just removed someone as a winner, also remove their 3-putt mark
+      if (action === 'winner' && idx >= 0) {
+        const tpIdx = g.p3greenieData[h].threePutts.indexOf(pid);
+        if (tpIdx >= 0) g.p3greenieData[h].threePutts.splice(tpIdx, 1);
+      }
+
+      await saveGame(g);
+      renderP3GreenieEntry();
+    };
+  });
+}
+
+async function handleScoreChange(pid, action) {
+  const g = state.game;
+  if (!g) return;
+  // View-only: block all score edits on a finished round.
+  if (state.viewOnlyMode) {
+    showToast('Round is finished — reopen to edit', 'warn');
+    return;
+  }
+  const h = state.currentHole;
+  if (!g.scores[pid]) g.scores[pid] = new Array(18).fill(null);
+  let cur = g.scores[pid][h - 1];
+
+  if (action === 'inc') {
+    if (cur === null) cur = g.pars[h - 1];
+    else cur = Math.min(15, cur + 1);
+  } else {
+    if (cur === null) cur = g.pars[h - 1] - 1;
+    else if (cur <= 1) cur = null;
+    else cur = cur - 1;
+  }
+
+  g.scores[pid][h - 1] = cur;
+
+  const el = $('val-' + pid);
+  if (el) {
+    el.textContent = cur === null ? '—' : cur;
+    el.classList.toggle('empty', cur === null);
+  }
+
+  await saveGame(g);
+
+  // Show auto-advance button if all scored on this hole
+  const allScored = g.players.every(p => g.scores[p.id] && g.scores[p.id][h - 1] != null);
+  const advBtn = $('auto-advance-btn');
+  if (advBtn) advBtn.style.display = (allScored && h < 18) ? 'block' : 'none';
+}
+
+// ============================================================
+// CALCULATIONS
+// ============================================================
+
+// Settle-up: given net money per player, return minimal payments.
+function calculateSettlements(money, players) {
+  const list = [];
+  players.forEach(p => {
+    const amt = Math.round((money[p.id] || 0) * 100) / 100;
+    if (Math.abs(amt) >= 0.01) {
+      list.push({ id: p.id, name: p.name, amount: amt });
+    }
+  });
+  if (list.length === 0) return [];
+  const payments = [];
+  let safety = 100;
+  while (safety-- > 0) {
+    list.sort((a, b) => b.amount - a.amount);
+    const creditor = list[0];
+    const debtor = list[list.length - 1];
+    if (!creditor || !debtor || creditor.amount < 0.01 || debtor.amount > -0.01) break;
+    const transfer = Math.min(creditor.amount, -debtor.amount);
+    const rounded = Math.round(transfer * 100) / 100;
+    if (rounded < 0.01) break;
+    payments.push({
+      from: debtor.name, fromId: debtor.id,
+      to: creditor.name, toId: creditor.id,
+      amount: rounded
+    });
+    creditor.amount -= rounded;
+    debtor.amount += rounded;
+  }
+  return payments;
+}
+
+function calcTotals(g) {
+  const totals = {};
+  g.players.forEach(p => {
+    const arr = g.scores[p.id] || [];
+    let gross = 0, count = 0, front = 0, frontCount = 0, back = 0, backCount = 0, net = 0;
+    arr.forEach((s, i) => {
+      if (s !== null && s !== undefined) {
+        gross += s;
+        count++;
+        const ns = g.sis ? netHoleScore(s, p.hcp, g.sis[i], g.pars[i], g.hcpRules) : s;
+        net += ns;
+        if (i < 9) { front += s; frontCount++; }
+        else { back += s; backCount++; }
+      }
+    });
+    totals[p.id] = { gross, count, front, frontCount, back, backCount, net };
+  });
+  return totals;
+}
+
+// Resolve participants for a given game config. Returns the players who are
+// participating, falling back to ALL players if no participants list is set
+// (legacy / pre-feature games). Used by every calc function so they all
+// respect the per-game participant filter.
+function getParticipants(g, gameCfg) {
+  if (!gameCfg) return [];
+  if (Array.isArray(gameCfg.participants) && gameCfg.participants.length > 0) {
+    const ids = new Set(gameCfg.participants);
+    const filtered = g.players.filter(p => ids.has(p.id));
+    // Defensive: if all the saved participant IDs are stale (none match current
+    // player IDs — can happen if the round was loaded weirdly or IDs got
+    // regenerated), fall back to all players so calc isn't silently empty.
+    if (filtered.length === 0) {
+      console.warn('getParticipants: participants array had IDs that don\'t match any current players; falling back to all players. Game cfg:', gameCfg, 'Players:', g.players.map(p => p.id));
+      return g.players;
+    }
+    return filtered;
+  }
+  // No participants list saved → everyone is in (legacy or pre-feature games)
+  return g.players;
+}
+
+// Skins
+function calcSkins(g) {
+  if (!g.games.skins) return null;
+  const cfg = g.games.skins;
+  const participants = getParticipants(g, cfg);
+  if (participants.length < 2) return null;
+  const require = cfg.require || 'none'; // 'none' | 'net' | 'gross'
+  const results = [];
+  let carry = 0;
+  for (let h = 0; h < 18; h++) {
+    const par = g.pars[h];
+    const si = g.sis[h];
+    const scores = participants.map(p => {
+      const raw = (g.scores[p.id] && g.scores[p.id][h] != null) ? g.scores[p.id][h] : null;
+      const net = raw != null ? netHoleScore(raw, p.hcp, si, par, g.hcpRules) : null;
+      return { pid: p.id, name: p.name, score: raw, netScore: net, hcp: p.hcp };
+    });
+    const allScored = scores.every(s => s.score !== null);
+    if (!allScored) continue;
+    const min = Math.min(...scores.map(s => s.score));
+    let winners = scores.filter(s => s.score === min);
+
+    // Par-or-better requirement: a "winner" only qualifies if their score (net or
+    // gross, depending on config) is at par or better. If the leader makes bogey
+    // or worse with the requirement on, no one wins the skin and it carries/dies
+    // per the tied-skins rule.
+    if (require !== 'none') {
+      winners = winners.filter(w => {
+        const checkScore = require === 'net' ? w.netScore : w.score;
+        return checkScore != null && checkScore <= par;
+      });
+    }
+
+    if (winners.length === 1) {
+      const amt = cfg.value + carry;
+      results.push({ hole: h + 1, winner: winners[0].name, winnerId: winners[0].pid, amount: amt, carried: carry });
+      carry = 0;
+    } else if (winners.length === 0) {
+      // Requirement not met by anyone — treat like a tied skin per the tie rule.
+      if (cfg.tieRule === 'carry') {
+        carry += cfg.value;
+        results.push({ hole: h + 1, winner: 'No par — carries', amount: 0, tied: true });
+      } else if (cfg.tieRule === 'split') {
+        // Nothing to split (no qualifying winners) — carries instead so money isn't lost.
+        carry += cfg.value;
+        results.push({ hole: h + 1, winner: 'No par — carries', amount: 0, tied: true });
+      } else {
+        results.push({ hole: h + 1, winner: 'No par — no skin', amount: 0, tied: true });
+      }
+    } else {
+      if (cfg.tieRule === 'carry') {
+        carry += cfg.value;
+        results.push({ hole: h + 1, winner: 'Tied — carries', amount: 0, tied: true });
+      } else if (cfg.tieRule === 'split') {
+        const amt = (cfg.value + carry) / winners.length;
+        winners.forEach(w => {
+          results.push({ hole: h + 1, winner: w.name, winnerId: w.pid, amount: amt, split: true });
+        });
+        carry = 0;
+      } else {
+        results.push({ hole: h + 1, winner: 'Tied — no skin', amount: 0, tied: true });
+      }
+    }
+  }
+  // Money: only participants are paid/charged. Everyone else gets $0 from this game.
+  const money = {};
+  g.players.forEach(p => money[p.id] = 0);
+  let totalSkins = 0;
+  results.forEach(r => {
+    if (r.winnerId && r.amount) { money[r.winnerId] += r.amount; totalSkins += r.amount; }
+  });
+  if (totalSkins > 0) {
+    const share = totalSkins / participants.length;
+    participants.forEach(p => money[p.id] -= share);
+  }
+  return { results, money, carry };
+}
+
+// Nassau
+// ============================================================
+// NASSAU + HUCKLE
+// ============================================================
+// A Nassau is three side-bets: front 9, back 9, overall 18. Each can be
+// stroke play (lowest total wins) or match play (most holes won wins).
+// Huckles are sub-bets called mid-segment by a player who is down by 2+:
+// a fresh bet for the same dollar amount, played from the call hole through
+// the end of the segment, between the caller and that segment's leader.
+// Huckles can stack — once you call one and then go down 2+ in the new
+// sub-bet, you can Huckle again on top of it (same direction only).
+
+// Hole range for a Nassau segment (1-indexed inclusive).
+function segmentRange(segment) {
+  if (segment === 'front') return [1, 9];
+  if (segment === 'back') return [10, 18];
+  return [1, 18]; // overall
+}
+
+// For 1v1 over a hole range: returns standings { aHolesWon, bHolesWon, aStrokes, bStrokes, holesPlayed }.
+// fromHole is 1-indexed inclusive; toHole 1-indexed inclusive.
+function pairwiseStandings(g, aId, bId, fromHole, toHole) {
+  const a = g.players.find(x => x.id === aId);
+  const b = g.players.find(x => x.id === bId);
+  if (!a || !b) return null;
+  const aArr = g.scores[a.id] || [];
+  const bArr = g.scores[b.id] || [];
+  let aHolesWon = 0, bHolesWon = 0, aStrokes = 0, bStrokes = 0, holesPlayed = 0;
+  for (let h = fromHole; h <= toHole; h++) {
+    const idx = h - 1;
+    const aScore = aArr[idx];
+    const bScore = bArr[idx];
+    if (aScore == null || bScore == null) continue;
+    holesPlayed++;
+    const aNet = netHoleScore(aScore, a.hcp, g.sis[idx], g.pars[idx], g.hcpRules);
+    const bNet = netHoleScore(bScore, b.hcp, g.sis[idx], g.pars[idx], g.hcpRules);
+    aStrokes += aNet;
+    bStrokes += bNet;
+    if (aNet < bNet) aHolesWon++;
+    else if (bNet < aNet) bHolesWon++;
+  }
+  return { a, b, aHolesWon, bHolesWon, aStrokes, bStrokes, holesPlayed };
+}
+
+// Determine the leader of a segment between two players. Returns the LEADING
+// player's id and the gap (always positive). Returns null if tied or no data.
+// `format` is 'stroke' or 'match'.
+function segmentLeader(g, aId, bId, segment, format) {
+  const [from, to] = segmentRange(segment);
+  const s = pairwiseStandings(g, aId, bId, from, to);
+  if (!s || s.holesPlayed === 0) return null;
+  if (format === 'match') {
+    if (s.aHolesWon > s.bHolesWon) return { leaderId: aId, trailerId: bId, gap: s.aHolesWon - s.bHolesWon };
+    if (s.bHolesWon > s.aHolesWon) return { leaderId: bId, trailerId: aId, gap: s.bHolesWon - s.aHolesWon };
+    return { leaderId: null, trailerId: null, gap: 0 };
+  }
+  // stroke: lower total leads
+  if (s.aStrokes < s.bStrokes) return { leaderId: aId, trailerId: bId, gap: s.bStrokes - s.aStrokes };
+  if (s.bStrokes < s.aStrokes) return { leaderId: bId, trailerId: aId, gap: s.aStrokes - s.bStrokes };
+  return { leaderId: null, trailerId: null, gap: 0 };
+}
+
+// Settle a single 1v1 match (parent Nassau side OR Huckle sub-bet) over a
+// hole range. Returns { winnerId, loserId, status } or null if not enough holes.
+// status is e.g. 'won 4&3' for closed matches in match play, '+3' for stroke.
+function settleMatch(g, aId, bId, fromHole, toHole, format) {
+  const s = pairwiseStandings(g, aId, bId, fromHole, toHole);
+  if (!s) return null;
+  const totalPossible = (toHole - fromHole + 1);
+  // Need at least one hole played to settle
+  if (s.holesPlayed === 0) return null;
+  if (format === 'match') {
+    const remaining = totalPossible - s.holesPlayed;
+    const lead = Math.abs(s.aHolesWon - s.bHolesWon);
+    // Match closes when the lead exceeds what's left
+    const closed = lead > remaining;
+    const allDone = s.holesPlayed === totalPossible;
+    if (!closed && !allDone) return { winnerId: null, loserId: null, status: 'in progress', open: true };
+    if (s.aHolesWon === s.bHolesWon) return { winnerId: null, loserId: null, status: 'tied', open: false };
+    const winner = s.aHolesWon > s.bHolesWon ? aId : bId;
+    const loser = winner === aId ? bId : aId;
+    if (closed) {
+      // closeout notation like "3&2" — won by N with M to play
+      return { winnerId: winner, loserId: loser, status: lead + '&' + remaining, open: false };
+    }
+    return { winnerId: winner, loserId: loser, status: lead + ' up', open: false };
+  }
+  // stroke: only settle when full segment complete
+  if (s.holesPlayed < totalPossible) return { winnerId: null, loserId: null, status: 'in progress', open: true };
+  if (s.aStrokes === s.bStrokes) return { winnerId: null, loserId: null, status: 'tied', open: false };
+  const winner = s.aStrokes < s.bStrokes ? aId : bId;
+  const loser = winner === aId ? bId : aId;
+  const gap = Math.abs(s.aStrokes - s.bStrokes);
+  return { winnerId: winner, loserId: loser, status: '+' + gap, open: false };
+}
+
+// Nassau — supports MULTIPLE 1v1 instances in a single round.
+// Each instance has its own pair, value, format, allowHuckle, special-shot bonuses.
+// Huckles are scoped to instance ID via huck.nassauIdx (legacy huckles without
+// nassauIdx are treated as instance 0 for backwards compat).
+function calcNassau(g) {
+  if (!g.games.nassau) return null;
+  const cfg = g.games.nassau;
+  const instances = Array.isArray(cfg.instances) && cfg.instances.length > 0
+    ? cfg.instances
+    : [cfg]; // legacy: top-level cfg IS the single instance
+
+  const matches = [];
+  const huckleResults = [];
+  const specials = [];
+  const money = {};
+  g.players.forEach(p => money[p.id] = 0);
+
+  // Track all huckles globally with nassauIdx tag (newer) or untagged (legacy)
+  const allHuckles = (g.huckleData && g.huckleData.huckles) || [];
+
+  instances.forEach((inst, instIdx) => {
+    const partIds = Array.isArray(inst.participants) ? inst.participants : [];
+    const pair = partIds.map(id => g.players.find(p => p.id === id)).filter(Boolean);
+    if (pair.length !== 2) return;
+    const a = pair[0], b = pair[1];
+    const v = inst.value || 0;
+    const format = inst.format || 'stroke';
+
+    // Main matches: front, back, overall
+    const m = { instanceIdx: instIdx, a: a.name, aId: a.id, b: b.name, bId: b.id, value: v, front: null, back: null, overall: null };
+    ['front', 'back', 'overall'].forEach(seg => {
+      const [from, to] = segmentRange(seg);
+      const r = settleMatch(g, a.id, b.id, from, to, format);
+      if (r && !r.open) {
+        if (r.winnerId === a.id) {
+          m[seg] = a.name + ' (' + r.status + ')';
+          money[a.id] += v;
+          money[b.id] -= v;
+        } else if (r.winnerId === b.id) {
+          m[seg] = b.name + ' (' + r.status + ')';
+          money[b.id] += v;
+          money[a.id] -= v;
+        } else {
+          m[seg] = 'Tie';
+        }
+      }
+    });
+    matches.push(m);
+
+    // Huckles for THIS instance only
+    const myHuckles = allHuckles.filter(huck => {
+      // If the huckle has an instance tag, use it. Otherwise (legacy), treat
+      // it as belonging to instance 0.
+      const tag = huck.nassauIdx != null ? huck.nassauIdx : 0;
+      if (tag !== instIdx) return false;
+      // Also confirm caller/opponent are this instance's pair
+      const pairIds = new Set([a.id, b.id]);
+      return pairIds.has(huck.callerId) && pairIds.has(huck.opponentId);
+    });
+    myHuckles.forEach(huck => {
+      const [, segEnd] = segmentRange(huck.segment);
+      const r = settleMatch(g, huck.callerId, huck.opponentId, huck.callHole, segEnd, format);
+      if (!r || r.open) {
+        huckleResults.push(Object.assign({}, huck, { instanceIdx: instIdx, status: 'in progress', winnerName: null }));
+        return;
+      }
+      if (r.winnerId === huck.callerId) {
+        money[huck.callerId] += v;
+        money[huck.opponentId] -= v;
+        huckleResults.push(Object.assign({}, huck, { instanceIdx: instIdx, status: r.status, winnerId: huck.callerId, winnerName: g.players.find(p => p.id === huck.callerId).name }));
+      } else if (r.winnerId === huck.opponentId) {
+        money[huck.opponentId] += v;
+        money[huck.callerId] -= v;
+        huckleResults.push(Object.assign({}, huck, { instanceIdx: instIdx, status: r.status, winnerId: huck.opponentId, winnerName: g.players.find(p => p.id === huck.opponentId).name }));
+      } else {
+        huckleResults.push(Object.assign({}, huck, { instanceIdx: instIdx, status: r.status, winnerName: 'Tie' }));
+      }
+    });
+
+    // Special-score payouts for this instance — only between THIS pair
+    const birdiePay = inst.birdiePay || 0;
+    const eaglePay = inst.eaglePay || 0;
+    const hioPay = inst.hioPay || 0;
+    if (birdiePay > 0 || eaglePay > 0 || hioPay > 0) {
+      pair.forEach(p => {
+        const arr = g.scores[p.id] || [];
+        arr.forEach((s, h) => {
+          if (s == null) return;
+          const par = g.pars[h];
+          const diff = s - par;
+          let kind = null, amt = 0;
+          if (s === 1 && hioPay > 0) {
+            kind = 'Hole-in-one'; amt = hioPay;
+          } else if (diff <= -2 && eaglePay > 0) {
+            kind = (diff <= -3) ? 'Albatross' : 'Eagle'; amt = eaglePay;
+          } else if (diff === -1 && birdiePay > 0) {
+            kind = 'Birdie'; amt = birdiePay;
+          }
+          if (kind && amt > 0) {
+            specials.push({ instanceIdx: instIdx, hole: h + 1, player: p.name, playerId: p.id, kind, amt });
+            // Pay from the OTHER player in this pair only
+            const other = pair.find(x => x.id !== p.id);
+            if (other) {
+              money[p.id] += amt;
+              money[other.id] -= amt;
+            }
+          }
+        });
+      });
+    }
+  });
+
+  if (matches.length === 0) return null;
+  return { matches, money, specials, huckles: huckleResults, format: instances[0].format || 'stroke', instances };
+}
+
+// Determine which Huckles are callable from the current hole onward.
+// A player is eligible to Huckle a specific opponent in a specific segment if:
+//   - The segment hasn't ended yet (current hole within segment range)
+//   - They are trailing in the most recent applicable bet (the parent Nassau if
+//     no Huckle exists yet, or the most recent stacked Huckle for this pair-segment)
+//     by 2+
+//   - Counter-Huckles are blocked: only the original trailer can stack.
+function computeEligibleHuckles(g, currentHole) {
+  const cfg = g.games.nassau;
+  if (!cfg) return [];
+  const instances = Array.isArray(cfg.instances) && cfg.instances.length > 0
+    ? cfg.instances
+    : [cfg];
+  const allHuckles = (g.huckleData && g.huckleData.huckles) || [];
+  const eligible = [];
+
+  instances.forEach((inst, instIdx) => {
+    if (inst.allowHuckle === false) return;
+    const partIds = Array.isArray(inst.participants) ? inst.participants : [];
+    const pair = partIds.map(id => g.players.find(p => p.id === id)).filter(Boolean);
+    if (pair.length !== 2) return;
+    const a = pair[0], b = pair[1];
+    const format = inst.format || 'stroke';
+    // Huckles for THIS instance only (scoped via nassauIdx; legacy = idx 0)
+    const huckles = allHuckles.filter(h => {
+      const tag = h.nassauIdx != null ? h.nassauIdx : 0;
+      if (tag !== instIdx) return false;
+      const pairIds = new Set([a.id, b.id]);
+      return pairIds.has(h.callerId) && pairIds.has(h.opponentId);
+    });
+
+    ['front', 'back', 'overall'].forEach(segment => {
+      const [from, to] = segmentRange(segment);
+      if (currentHole > to || currentHole < from) return;
+      const pairHuckles = huckles.filter(h => h.segment === segment).sort((x, y) => x.callHole - y.callHole);
+      let activeBet;
+      if (pairHuckles.length === 0) {
+        activeBet = { callerId: null, opponentId: null, callHole: from, isParent: true };
+      } else {
+        activeBet = pairHuckles[pairHuckles.length - 1];
+      }
+      if (activeBet.callHole >= currentHole) return;
+
+      const standings = pairwiseStandings(g, a.id, b.id, activeBet.callHole, Math.min(currentHole - 1, to));
+      if (!standings || standings.holesPlayed === 0) return;
+      let trailerId = null, gap = 0;
+      if (format === 'match') {
+        if (standings.aHolesWon > standings.bHolesWon) { trailerId = b.id; gap = standings.aHolesWon - standings.bHolesWon; }
+        else if (standings.bHolesWon > standings.aHolesWon) { trailerId = a.id; gap = standings.bHolesWon - standings.aHolesWon; }
+      } else {
+        if (standings.aStrokes < standings.bStrokes) { trailerId = b.id; gap = standings.bStrokes - standings.aStrokes; }
+        else if (standings.bStrokes < standings.aStrokes) { trailerId = a.id; gap = standings.aStrokes - standings.bStrokes; }
+      }
+      if (gap < 2) return;
+      if (!activeBet.isParent && trailerId !== activeBet.callerId) return;
+
+      const trailer = g.players.find(p => p.id === trailerId);
+      const leaderId = trailerId === a.id ? b.id : a.id;
+      const leader = g.players.find(p => p.id === leaderId);
+      if (!trailer || !leader) return;
+
+      eligible.push({
+        nassauIdx: instIdx,
+        callerId: trailerId,
+        callerName: trailer.name,
+        opponentId: leaderId,
+        opponentName: leader.name,
+        segment,
+        callHole: currentHole,
+        gap,
+        stacking: !activeBet.isParent
+      });
+    });
+  });
+  return eligible;
+}
+
+// Open the Huckle modal with one entry per eligible call
+function openHuckleModal(eligible) {
+  const ctr = $('huckle-options');
+  ctr.innerHTML = '';
+  if (eligible.length === 0) {
+    ctr.innerHTML = '<div class="help-text" style="text-align:center;padding:12px">Nothing to huckle right now.</div>';
+  } else {
+    eligible.forEach((e, idx) => {
+      const row = document.createElement('div');
+      row.style.cssText = 'border:1px solid var(--border);border-radius:8px;padding:10px;margin-bottom:8px;display:flex;align-items:center;gap:10px';
+      const segLabel = e.segment === 'front' ? 'Front 9' : (e.segment === 'back' ? 'Back 9' : 'Overall 18');
+      const stackTag = e.stacking ? ' <span style="color:var(--warn);font-weight:600">[stacking]</span>' : '';
+      row.innerHTML = `
+        <div style="flex:1">
+          <div style="font-weight:500"><strong>${e.callerName}</strong> down ${e.gap} on ${segLabel}${stackTag}</div>
+          <div class="small-text" style="font-size:11px">Huckle ${e.opponentName} from hole ${e.callHole} → end of ${segLabel.toLowerCase()}</div>
+        </div>
+        <button class="small primary huckle-confirm" data-idx="${idx}">Call</button>
+      `;
+      ctr.appendChild(row);
+    });
+    ctr.querySelectorAll('.huckle-confirm').forEach(btn => {
+      btn.onclick = async () => {
+        const e = eligible[parseInt(btn.dataset.idx)];
+        const g = state.game;
+        if (!g.huckleData) g.huckleData = { huckles: [] };
+        if (!g.huckleData.huckles) g.huckleData.huckles = [];
+        g.huckleData.huckles.push({
+          id: 'hk-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+          nassauIdx: e.nassauIdx != null ? e.nassauIdx : 0,
+          callerId: e.callerId,
+          opponentId: e.opponentId,
+          segment: e.segment,
+          callHole: e.callHole,
+          calledAt: Date.now()
+        });
+        await saveGame(g);
+        $('huckle-modal').classList.remove('show');
+        renderGameBanners();
+        showToast('Huckle called: ' + e.callerName + ' vs ' + e.opponentName);
+      };
+    });
+  }
+  $('huckle-modal').classList.add('show');
+}
+
+// Stroke pot
+function calcStroke(g) {
+  if (!g.games.stroke) return null;
+  const cfg = g.games.stroke;
+  const participants = getParticipants(g, cfg);
+  if (participants.length < 2) return null;
+  const totals = calcTotals(g);
+  const completed = participants.filter(p => totals[p.id].count === 18);
+  // Money is initialized for everyone but only participants get charged the buy-in
+  const money = {};
+  g.players.forEach(p => money[p.id] = 0);
+  if (completed.length < 2) {
+    return { winners: [], money, pot: cfg.buyin * participants.length, complete: false, winShare: 0 };
+  }
+  const score = p => cfg.net ? totals[p.id].net : totals[p.id].gross;
+  const sorted = [...completed].sort((a, b) => score(a) - score(b));
+  const lowest = score(sorted[0]);
+  const winners = sorted.filter(p => score(p) === lowest);
+  const pot = cfg.buyin * participants.length;
+  const winShare = pot / winners.length;
+  participants.forEach(p => money[p.id] = -cfg.buyin);
+  winners.forEach(w => money[w.id] += winShare);
+  return { winners: winners.map(w => w.name), money, pot, complete: true, winShare };
+}
+
+// Compute banker money standings through hole H-1 (used to determine pick order on hole H)
+function bankerStandingsThrough(g, throughHole) {
+  if (!g.games.banker) return null;
+  const cfg = g.games.banker;
+  const money = {};
+  g.players.forEach(p => money[p.id] = 0);
+  if (!g.bankerData) g.bankerData = { holes: {}, picks: {} };
+
+  // Round-wide range with legacy fallback
+  const roundMin = cfg.minBet != null ? cfg.minBet : (cfg.value || 1);
+  const roundMax = cfg.maxBet != null ? cfg.maxBet : (cfg.value || roundMin);
+  const defaultBet = (roundMin + roundMax) / 2;
+
+  for (let h = 0; h < throughHole; h++) {
+    const banker = getBankerForHole(g, h + 1);
+    if (!banker) continue;
+    const hd = g.bankerData.holes[h + 1] || {};
+    const playerBets = hd.playerBets || {};
+    const presses = hd.presses || [];
+    const bankerRepresses = hd.bankerRepresses || 0;
+    const par = g.pars[h];
+    const birdieMode = cfg.birdieDouble || 'anyone';
+
+    const bankerScore = (g.scores[banker.id] && g.scores[banker.id][h] != null) ? g.scores[banker.id][h] : null;
+    if (bankerScore === null) continue;
+
+    // Pre-compute who scored birdie or better on this hole
+    const birdiesByPlayer = {};
+    let anyoneBirdie = false;
+    g.players.forEach(p => {
+      const s = (g.scores[p.id] && g.scores[p.id][h] != null) ? g.scores[p.id][h] : null;
+      if (s !== null && s <= par - 1) {
+        birdiesByPlayer[p.id] = true;
+        anyoneBirdie = true;
+      }
+    });
+    const bankerBirdied = !!birdiesByPlayer[banker.id];
+
+    g.players.forEach(p => {
+      if (p.id === banker.id) return;
+      const s = (g.scores[p.id] && g.scores[p.id][h] != null) ? g.scores[p.id][h] : null;
+      if (s === null) return;
+      let pBet = playerBets[p.id];
+      if (pBet == null) pBet = (hd.bet != null ? hd.bet : defaultBet);
+      const press = presses.find(x => x.playerId === p.id);
+      // Banker presses double EVERY player's wager. Pressed players go on top of that.
+      let mult = Math.pow(2, bankerRepresses);
+      if (press) {
+        if (press.pressed === true) mult = 2 * Math.pow(2, bankerRepresses);
+        else if (press.pressed === false) mult = Math.pow(2, bankerRepresses);
+        else if (press.multiplier) mult = press.multiplier * Math.pow(2, bankerRepresses);
+        else if (press.pressCount) mult = Math.pow(2, press.pressCount + bankerRepresses);
+      }
+      // Birdie auto-double
+      if (birdieMode === 'all' && anyoneBirdie) {
+        mult *= 2;
+      } else if (birdieMode === 'anyone' && (birdiesByPlayer[p.id] || bankerBirdied)) {
+        // Doubles this matchup if either party in the matchup birdied
+        mult *= 2;
+      }
+      const wager = pBet * mult;
+      let bn = bankerScore, pn = s;
+      if (cfg.net && g.sis) {
+        bn = netHoleScore(bankerScore, banker.hcp, g.sis[h], g.pars[h], g.hcpRules);
+        pn = netHoleScore(s, p.hcp, g.sis[h], g.pars[h], g.hcpRules);
+      }
+      if (bn < pn) { money[banker.id] += wager; money[p.id] -= wager; }
+      else if (pn < bn) { money[banker.id] -= wager; money[p.id] += wager; }
+    });
+  }
+  return money;
+}
+
+// Determine who is banker for a given hole (1-indexed)
+function getBankerForHole(g, hole) {
+  if (!g.games.banker) return null;
+  const cfg = g.games.banker;
+  const loserStart = cfg.loserStart || 16;
+  if (!g.bankerData) g.bankerData = { holes: {}, picks: {} };
+
+  // Banker game's participants — only these can be banker / play in this game.
+  const participants = getParticipants(g, cfg);
+  if (participants.length === 0) return null;
+
+  // If on or after loser-pick start AND someone has chosen, use that pick
+  // (validate the pick is a participant; if not, fall back to rotation).
+  if (hole >= loserStart && g.bankerData.picks && g.bankerData.picks[hole]) {
+    const pickedId = g.bankerData.picks[hole];
+    const picked = participants.find(p => p.id === pickedId);
+    if (picked) return picked;
+  }
+  // Default rotation — use saved bankerOrder if present, else setup order.
+  // Both filtered to only include participants.
+  const order = (g.bankerData.bankerOrder && g.bankerData.bankerOrder.length > 0)
+    ? g.bankerData.bankerOrder.map(id => participants.find(p => p.id === id)).filter(Boolean)
+    : participants;
+  if (order.length === 0) return participants[(hole - 1) % participants.length];
+  const idx = (hole - 1) % order.length;
+  return order[idx];
+}
+
+// Banker game calculation
+function calcBanker(g) {
+  if (!g.games.banker) return null;
+  const cfg = g.games.banker;
+  const money = {};
+  g.players.forEach(p => money[p.id] = 0);
+  const holeResults = [];
+
+  if (!g.bankerData) g.bankerData = { holes: {} };
+
+  // Round-wide range with legacy fallback
+  const roundMin = cfg.minBet != null ? cfg.minBet : (cfg.value || 1);
+  const roundMax = cfg.maxBet != null ? cfg.maxBet : (cfg.value || roundMin);
+  const defaultBet = (roundMin + roundMax) / 2;
+
+  for (let h = 0; h < 18; h++) {
+    const banker = getBankerForHole(g, h + 1);
+    if (!banker) continue;
+    const hd = g.bankerData.holes[h + 1] || {};
+    const playerBets = hd.playerBets || {};
+    const presses = hd.presses || [];
+    const bankerRepresses = hd.bankerRepresses || 0;
+    const par = g.pars[h];
+    const birdieMode = cfg.birdieDouble || 'anyone';
+    // Only banker game's participants compete. Non-participants are skipped.
+    const participants = getParticipants(g, cfg);
+    const partIds = new Set(participants.map(p => p.id));
+
+    const bankerScore = (g.scores[banker.id] && g.scores[banker.id][h] != null) ? g.scores[banker.id][h] : null;
+    if (bankerScore === null) continue;
+
+    // Pre-compute who scored birdie or better on this hole — only among participants
+    const birdiesByPlayer = {};
+    let anyoneBirdie = false;
+    participants.forEach(p => {
+      const s = (g.scores[p.id] && g.scores[p.id][h] != null) ? g.scores[p.id][h] : null;
+      if (s !== null && s <= par - 1) {
+        birdiesByPlayer[p.id] = true;
+        anyoneBirdie = true;
+      }
+    });
+    const bankerBirdied = !!birdiesByPlayer[banker.id];
+
+    const result = { hole: h + 1, banker: banker.name, bankerId: banker.id, matchups: [], birdieDoubled: false };
+
+    let allScored = true;
+    participants.forEach(p => {
+      if (p.id === banker.id) return;
+      const s = (g.scores[p.id] && g.scores[p.id][h] != null) ? g.scores[p.id][h] : null;
+      if (s === null) { allScored = false; return; }
+      let pBet = playerBets[p.id];
+      if (pBet == null) pBet = (hd.bet != null ? hd.bet : defaultBet);
+      const press = presses.find(x => x.playerId === p.id);
+      // Banker presses double EVERY player's wager. Pressed players go on top of that.
+      let mult = Math.pow(2, bankerRepresses);
+      if (press) {
+        if (press.pressed === true) {
+          mult = 2 * Math.pow(2, bankerRepresses);
+        } else if (press.pressed === false) {
+          mult = Math.pow(2, bankerRepresses);
+        } else if (press.multiplier) {
+          mult = press.multiplier * Math.pow(2, bankerRepresses);
+        } else if (press.pressCount) {
+          mult = Math.pow(2, press.pressCount + bankerRepresses);
+        }
+      }
+      // Birdie auto-double
+      let birdieDoubled = false;
+      if (birdieMode === 'all' && anyoneBirdie) {
+        mult *= 2;
+        birdieDoubled = true;
+      } else if (birdieMode === 'anyone' && (birdiesByPlayer[p.id] || bankerBirdied)) {
+        mult *= 2;
+        birdieDoubled = true;
+      }
+      if (birdieDoubled) result.birdieDoubled = true;
+
+      const wager = pBet * mult;
+      let bankerNet = bankerScore;
+      let playerNet = s;
+      if (cfg.net && g.sis) {
+        bankerNet = netHoleScore(bankerScore, banker.hcp, g.sis[h], g.pars[h], g.hcpRules);
+        playerNet = netHoleScore(s, p.hcp, g.sis[h], g.pars[h], g.hcpRules);
+      }
+      let outcome = 'tie';
+      if (bankerNet < playerNet) {
+        money[banker.id] += wager;
+        money[p.id] -= wager;
+        outcome = 'banker';
+      } else if (playerNet < bankerNet) {
+        money[banker.id] -= wager;
+        money[p.id] += wager;
+        outcome = 'player';
+      }
+      result.matchups.push({ player: p.name, playerId: p.id, wager, outcome, mult, bet: pBet, birdieDoubled });
+    });
+
+    if (allScored && result.matchups.length > 0) holeResults.push(result);
+  }
+
+  return { money, holeResults };
+}
+
+// Compute the pending multiplier for the current hole, given prior hole results.
+// Walks backward from the most recently-scored hole before `currentHole`,
+// counting consecutive ties. Each tie adds +1 to the linear multiplier.
+function pendingTieMultiplier(holeResults, currentHole) {
+  if (!Array.isArray(holeResults) || holeResults.length === 0) return 1;
+  // Take only results before currentHole (1-indexed)
+  const priors = holeResults.filter(r => r.hole < currentHole).sort((a, b) => a.hole - b.hole);
+  let streak = 0;
+  for (let i = priors.length - 1; i >= 0; i--) {
+    if (priors[i].winner === 'Tie') streak++;
+    else break;
+  }
+  return 1 + streak;
+}
+
+// Vegas (2v2 paired-digit scoring)
+function calcVegas(g) {
+  if (!g.games.vegas) return null;
+  const cfg = g.games.vegas;
+  const participants = getParticipants(g, cfg);
+  if (participants.length !== 4) return null;
+  const money = {};
+  g.players.forEach(p => money[p.id] = 0);
+  const holeResults = [];
+
+  // Pairings refer to participants[0..3], not g.players[0..3]
+  const pairings = [
+    [[0,1], [2,3]],
+    [[0,2], [1,3]],
+    [[0,3], [1,2]]
+  ];
+
+  // Tie-streak escalation: when a hole ties, the next hole's multiplier
+  // increases by 1 (linear). When a hole is won, the streak resets to 0.
+  // So a single tie → next hole 2x; two in a row → next hole 3x; etc.
+  // Stacks multiplicatively with eagle doubles.
+  let tieStreak = 0;
+
+  for (let h = 0; h < 18; h++) {
+    // Pairing: when rotate='fixed', stick with segment 0 (first pair) all 18.
+    // When rotate='rotate' (default), split 6-6-6 so everyone partners everyone.
+    const segIdx = (cfg.rotate === 'fixed') ? 0 : (h < 6 ? 0 : (h < 12 ? 1 : 2));
+    const pair = pairings[segIdx];
+    const teamA = pair[0].map(i => participants[i]);
+    const teamB = pair[1].map(i => participants[i]);
+
+    function getScore(p, useNet) {
+      const s = (g.scores[p.id] && g.scores[p.id][h] != null) ? g.scores[p.id][h] : null;
+      if (s === null) return null;
+      if (useNet && g.sis) return netHoleScore(s, p.hcp, g.sis[h], g.pars[h], g.hcpRules);
+      return s;
+    }
+    const aScores = teamA.map(p => getScore(p, cfg.net));
+    const bScores = teamB.map(p => getScore(p, cfg.net));
+    if (aScores.some(x => x === null) || bScores.some(x => x === null)) continue;
+
+    const par = g.pars[h];
+
+    // Pair scores: low first unless any score is 10+
+    function pairScores(s1, s2) {
+      const lo = Math.min(s1, s2), hi = Math.max(s1, s2);
+      if (hi >= 10) return hi * 10 + lo; // 4 and 10 → 104
+      return lo * 10 + hi;
+    }
+
+    let aTeamScore = pairScores(aScores[0], aScores[1]);
+    let bTeamScore = pairScores(bScores[0], bScores[1]);
+
+    // Birdie/eagle effects use gross scores
+    const aGross = teamA.map(p => getScore(p, false));
+    const bGross = teamB.map(p => getScore(p, false));
+    const aHasBirdie = aGross.some(s => s !== null && s <= par - 1);
+    const bHasBirdie = bGross.some(s => s !== null && s <= par - 1);
+    const aHasEagle = aGross.some(s => s !== null && s <= par - 2);
+    const bHasEagle = bGross.some(s => s !== null && s <= par - 2);
+
+    // Multiplier starts from any inherited tie streak (1x base, +1 per prior tie).
+    let multiplier = 1 + tieStreak;
+    let flipNote = '';
+    let streakNote = tieStreak > 0 ? `${multiplier}x (${tieStreak} tie${tieStreak > 1 ? 's' : ''} pending)` : '';
+
+    // Birdie flip: a team with a birdie flips the OPPONENT's score (high digit
+    // first). Always on — matches Dynamic Vegas. No toggle.
+    if (aHasBirdie && !bHasBirdie) {
+      const lo = Math.min(bScores[0], bScores[1]);
+      const hi = Math.max(bScores[0], bScores[1]);
+      if (hi < 10) bTeamScore = hi * 10 + lo;
+      flipNote = teamA.map(p => p.name).join(' & ') + ' birdied — flipped opponent';
+    } else if (bHasBirdie && !aHasBirdie) {
+      const lo = Math.min(aScores[0], aScores[1]);
+      const hi = Math.max(aScores[0], aScores[1]);
+      if (hi < 10) aTeamScore = hi * 10 + lo;
+      flipNote = teamB.map(p => p.name).join(' & ') + ' birdied — flipped opponent';
+    }
+    // Eagle: also doubles the point swing on that hole. Always on.
+    if ((aHasEagle && !bHasEagle) || (bHasEagle && !aHasEagle)) multiplier *= 2;
+
+    const diff = Math.abs(aTeamScore - bTeamScore);
+    const points = diff * multiplier;
+    let winner = 'Tie';
+    if (aTeamScore < bTeamScore) winner = teamA.map(p => p.name).join(' & ');
+    else if (bTeamScore < aTeamScore) winner = teamB.map(p => p.name).join(' & ');
+
+    if (winner !== 'Tie') {
+      const winners = aTeamScore < bTeamScore ? teamA : teamB;
+      const losers = aTeamScore < bTeamScore ? teamB : teamA;
+      const total = points * cfg.value;
+      const perPlayer = total / winners.length;
+      winners.forEach(w => money[w.id] += perPlayer);
+      losers.forEach(l => money[l.id] -= perPlayer);
+      // Won — reset streak
+      tieStreak = 0;
+    } else {
+      // Tied — escalate
+      tieStreak += 1;
+    }
+
+    holeResults.push({
+      hole: h + 1,
+      teamA: teamA.map(p => p.name).join(' & '),
+      teamB: teamB.map(p => p.name).join(' & '),
+      aScore: aTeamScore,
+      bScore: bTeamScore,
+      points,
+      multiplier,
+      winner,
+      flipNote,
+      streakNote
+    });
+  }
+
+  return { money, holeResults };
+}
+
+// Dynamic Vegas: Vegas-style 2v2 paired-digit scoring, but partnerships
+// reshape every hole based on the PREVIOUS hole's high and low scorer.
+// - Hole 1: random pairing (deterministic, seeded by game code so all phones
+//   showing the same round get the same pairing).
+// - Hole N (N>1): on hole N-1, find the highest gross scorer and the lowest
+//   gross scorer. They partner together for hole N. The other two are the
+//   second team. Ties: partnerships from the previous hole are reused as-is.
+// - Birdie flip: opposing team's score gets flipped (high digit first).
+// - Eagle: doubles point swing on that hole.
+// - Settled as one total over 18 holes (no per-hole money payouts).
+function calcDynamicVegas(g) {
+  if (!g.games.dvegas) return null;
+  const cfg = g.games.dvegas;
+  const participants = getParticipants(g, cfg);
+  if (participants.length !== 4) return null;
+  const money = {};
+  g.players.forEach(p => money[p.id] = 0);
+  const holeResults = [];
+
+  // Deterministic seed for hole-1 pairing: hash the game code so every phone
+  // viewing the same round computes the same pairing without any persisted state.
+  function hashCode(s) {
+    let h = 0;
+    for (let i = 0; i < s.length; i++) {
+      h = ((h << 5) - h) + s.charCodeAt(i);
+      h |= 0;
+    }
+    return Math.abs(h);
+  }
+  function hole1Teams() {
+    // Three possible pairings of 4 participants
+    const seed = hashCode(g.code || 'default');
+    const pairings = [
+      [[0,1], [2,3]],
+      [[0,2], [1,3]],
+      [[0,3], [1,2]]
+    ];
+    return pairings[seed % 3];
+  }
+
+  function getScore(p, h, useNet) {
+    const s = (g.scores[p.id] && g.scores[p.id][h] != null) ? g.scores[p.id][h] : null;
+    if (s === null) return null;
+    if (useNet && g.sis) return netHoleScore(s, p.hcp, g.sis[h], g.pars[h], g.hcpRules);
+    return s;
+  }
+
+  // Resolve teams for each hole, walking forward. teamsByHole[h] = [[idA,idB],[idC,idD]]
+  const teamsByHole = [];
+  // Hole 0 (1st hole) — seeded random across participants
+  const hole1 = hole1Teams();
+  teamsByHole[0] = [
+    hole1[0].map(i => participants[i].id),
+    hole1[1].map(i => participants[i].id)
+  ];
+
+  for (let h = 1; h < 18; h++) {
+    // Look at hole h-1's gross scores among participants only. If any unscored,
+    // fall back to previous hole's teams.
+    const prevH = h - 1;
+    const prevScores = participants.map(p => ({
+      id: p.id,
+      score: (g.scores[p.id] && g.scores[p.id][prevH] != null) ? g.scores[p.id][prevH] : null
+    }));
+    if (prevScores.some(x => x.score === null)) {
+      teamsByHole[h] = teamsByHole[prevH];
+      continue;
+    }
+
+    // Find high and low. Ties → keep previous-hole partnerships.
+    const sorted = [...prevScores].sort((a, b) => a.score - b.score);
+    const lowScore = sorted[0].score;
+    const highScore = sorted[sorted.length - 1].score;
+    const lowCount = prevScores.filter(x => x.score === lowScore).length;
+    const highCount = prevScores.filter(x => x.score === highScore).length;
+    if (lowCount > 1 || highCount > 1) {
+      teamsByHole[h] = teamsByHole[prevH];
+      continue;
+    }
+
+    const lowId = sorted[0].id;
+    const highId = sorted[sorted.length - 1].id;
+    const otherIds = participants.filter(p => p.id !== lowId && p.id !== highId).map(p => p.id);
+    teamsByHole[h] = [
+      [lowId, highId],
+      otherIds
+    ];
+  }
+
+  // Tie-streak escalation: when a hole ties, the next hole's multiplier
+  // increases by 1 (linear). When a hole is won, the streak resets to 0.
+  // Stacks multiplicatively with eagle doubles.
+  let tieStreak = 0;
+
+  // Now calc each hole using these teams
+  for (let h = 0; h < 18; h++) {
+    const teamA = teamsByHole[h][0].map(id => g.players.find(p => p.id === id));
+    const teamB = teamsByHole[h][1].map(id => g.players.find(p => p.id === id));
+    const aScores = teamA.map(p => getScore(p, h, cfg.net));
+    const bScores = teamB.map(p => getScore(p, h, cfg.net));
+    if (aScores.some(x => x === null) || bScores.some(x => x === null)) continue;
+
+    const par = g.pars[h];
+
+    function pairScores(s1, s2) {
+      const lo = Math.min(s1, s2), hi = Math.max(s1, s2);
+      if (hi >= 10) return hi * 10 + lo;
+      return lo * 10 + hi;
+    }
+
+    let aTeamScore = pairScores(aScores[0], aScores[1]);
+    let bTeamScore = pairScores(bScores[0], bScores[1]);
+
+    // Birdie/eagle effects use gross scores
+    const aGross = teamA.map(p => getScore(p, h, false));
+    const bGross = teamB.map(p => getScore(p, h, false));
+    const aHasBirdie = aGross.some(s => s !== null && s <= par - 1);
+    const bHasBirdie = bGross.some(s => s !== null && s <= par - 1);
+    const aHasEagle = aGross.some(s => s !== null && s <= par - 2);
+    const bHasEagle = bGross.some(s => s !== null && s <= par - 2);
+
+    // Multiplier starts from any inherited tie streak (1x base, +1 per prior tie).
+    let multiplier = 1 + tieStreak;
+    let flipNote = '';
+    let streakNote = tieStreak > 0 ? `${multiplier}x (${tieStreak} tie${tieStreak > 1 ? 's' : ''} pending)` : '';
+
+    // Birdie flip: a team with a birdie flips the OPPONENT's score (high digit first)
+    if (aHasBirdie && !bHasBirdie) {
+      const lo = Math.min(bScores[0], bScores[1]);
+      const hi = Math.max(bScores[0], bScores[1]);
+      if (hi < 10) bTeamScore = hi * 10 + lo;
+      flipNote = teamA.map(p => p.name).join(' & ') + ' birdied — flipped opponent';
+    } else if (bHasBirdie && !aHasBirdie) {
+      const lo = Math.min(aScores[0], aScores[1]);
+      const hi = Math.max(aScores[0], aScores[1]);
+      if (hi < 10) aTeamScore = hi * 10 + lo;
+      flipNote = teamB.map(p => p.name).join(' & ') + ' birdied — flipped opponent';
+    }
+    // Eagle: also doubles the point swing
+    if ((aHasEagle && !bHasEagle) || (bHasEagle && !aHasEagle)) multiplier *= 2;
+
+    const diff = Math.abs(aTeamScore - bTeamScore);
+    const points = diff * multiplier;
+    let winner = 'Tie';
+    if (aTeamScore < bTeamScore) winner = teamA.map(p => p.name).join(' & ');
+    else if (bTeamScore < aTeamScore) winner = teamB.map(p => p.name).join(' & ');
+
+    if (winner !== 'Tie') {
+      const winners = aTeamScore < bTeamScore ? teamA : teamB;
+      const losers = aTeamScore < bTeamScore ? teamB : teamA;
+      const total = points * cfg.value;
+      const perPlayer = total / winners.length;
+      winners.forEach(w => money[w.id] += perPlayer);
+      losers.forEach(l => money[l.id] -= perPlayer);
+      tieStreak = 0;
+    } else {
+      tieStreak += 1;
+    }
+
+    holeResults.push({
+      hole: h + 1,
+      teamA: teamA.map(p => p.name).join(' & '),
+      teamB: teamB.map(p => p.name).join(' & '),
+      aScore: aTeamScore,
+      bScore: bTeamScore,
+      points,
+      multiplier,
+      winner,
+      flipNote,
+      streakNote
+    });
+  }
+
+  return { money, holeResults, teamsByHole };
+}
+
+// 6's
+function calcSixes(g) {
+  if (!g.games.sixes) return null;
+  const cfg = g.games.sixes;
+  const participants = getParticipants(g, cfg);
+  if (participants.length !== 4) return null;
+  const money = {};
+  g.players.forEach(p => money[p.id] = 0);
+  const segments = [];
+
+  // Pairings for each segment
+  const pairings = [
+    [[0,1], [2,3]], // segment 1: holes 1-6
+    [[0,2], [1,3]], // segment 2: holes 7-12
+    [[0,3], [1,2]]  // segment 3: holes 13-18
+  ];
+
+  pairings.forEach((pair, segIdx) => {
+    const startHole = segIdx * 6;
+    const endHole = startHole + 6;
+    const teamA = pair[0].map(i => participants[i]);
+    const teamB = pair[1].map(i => participants[i]);
+    let aScore = 0, bScore = 0, complete = true;
+    for (let h = startHole; h < endHole; h++) {
+      const aScores = teamA.map(p => {
+        const s = (g.scores[p.id] && g.scores[p.id][h] != null) ? g.scores[p.id][h] : null;
+        if (s === null) return null;
+        return cfg.net && g.sis ? netHoleScore(s, p.hcp, g.sis[h], g.pars[h], g.hcpRules) : s;
+      });
+      const bScores = teamB.map(p => {
+        const s = (g.scores[p.id] && g.scores[p.id][h] != null) ? g.scores[p.id][h] : null;
+        if (s === null) return null;
+        return cfg.net && g.sis ? netHoleScore(s, p.hcp, g.sis[h], g.pars[h], g.hcpRules) : s;
+      });
+      if (aScores.some(s => s === null) || bScores.some(s => s === null)) { complete = false; break; }
+      aScore += Math.min(...aScores);
+      bScore += Math.min(...bScores);
+    }
+    const seg = {
+      seg: segIdx + 1,
+      teamA: teamA.map(p => p.name).join(' & '),
+      teamB: teamB.map(p => p.name).join(' & '),
+      aScore, bScore,
+      winner: null, complete
+    };
+    if (complete) {
+      if (aScore < bScore) {
+        seg.winner = seg.teamA;
+        teamA.forEach(p => money[p.id] += cfg.value);
+        teamB.forEach(p => money[p.id] -= cfg.value);
+      } else if (bScore < aScore) {
+        seg.winner = seg.teamB;
+        teamB.forEach(p => money[p.id] += cfg.value);
+        teamA.forEach(p => money[p.id] -= cfg.value);
+      } else {
+        seg.winner = 'Tie';
+      }
+    }
+    segments.push(seg);
+  });
+
+  return { segments, money };
+}
+
+// Wolf
+function calcWolf(g) {
+  if (!g.games.wolf) return null;
+  const cfg = g.games.wolf;
+  const participants = getParticipants(g, cfg);
+  if (participants.length < 3) return null;
+  const money = {};
+  g.players.forEach(p => money[p.id] = 0);
+  const holeResults = [];
+
+  if (!g.wolfData) g.wolfData = { holes: {} };
+
+  for (let h = 0; h < 18; h++) {
+    const captainIdx = h % participants.length;
+    const captain = participants[captainIdx];
+    const hd = g.wolfData.holes[h + 1] || {};
+    if (!hd.choice) continue;
+
+    // Get scores from participants only
+    const allScores = {};
+    let allScored = true;
+    participants.forEach(p => {
+      const s = (g.scores[p.id] && g.scores[p.id][h] != null) ? g.scores[p.id][h] : null;
+      if (s === null) allScored = false;
+      allScores[p.id] = s;
+    });
+    if (!allScored) continue;
+
+    let team1, team2, mult;
+    if (hd.choice === 'lone') {
+      team1 = [captain];
+      team2 = participants.filter(p => p.id !== captain.id);
+      mult = 2;
+    } else if (hd.choice === 'blind') {
+      team1 = [captain];
+      team2 = participants.filter(p => p.id !== captain.id);
+      mult = 3;
+    } else if (hd.choice === 'partner' && hd.partnerId) {
+      const partner = participants.find(p => p.id === hd.partnerId);
+      if (!partner) continue;
+      team1 = [captain, partner];
+      team2 = participants.filter(p => p.id !== captain.id && p.id !== hd.partnerId);
+      mult = 1;
+    } else continue;
+
+    const team1Score = Math.min(...team1.map(p => allScores[p.id]));
+    const team2Score = Math.min(...team2.map(p => allScores[p.id]));
+    const wager = cfg.value * mult;
+
+    const result = { hole: h + 1, captain: captain.name, choice: hd.choice, mult, team1Score, team2Score, winner: null };
+    if (team1Score < team2Score) {
+      // Team 1 wins: each player on team 1 gets wager from each player on team 2
+      team1.forEach(t1 => team2.forEach(t2 => {
+        money[t1.id] += wager;
+        money[t2.id] -= wager;
+      }));
+      result.winner = team1.map(p => p.name).join(' & ');
+    } else if (team2Score < team1Score) {
+      team2.forEach(t2 => team1.forEach(t1 => {
+        money[t2.id] += wager;
+        money[t1.id] -= wager;
+      }));
+      result.winner = team2.map(p => p.name).join(' & ');
+    } else {
+      result.winner = 'Tie';
+    }
+    holeResults.push(result);
+  }
+
+  return { money, holeResults };
+}
+
+// Match play (individual): every player plays each other player in 18-hole match.
+// Hole won = lower net (or gross) score. Match resolved by holes-up vs holes-remaining.
+// Match play — supports MULTIPLE 1v1 instances in a single round.
+// New shape: g.games.match.instances = [{ value, net, participants:[idA,idB] }, ...]
+// Legacy shape: g.games.match = { value, net, participants:[idA,idB] } → treated as one instance.
+function calcMatch(g) {
+  if (!g.games.match) return null;
+  const cfg = g.games.match;
+  // Resolve all instances. If `instances` array exists, use it. Otherwise the
+  // top-level cfg IS the single instance.
+  const instances = Array.isArray(cfg.instances) && cfg.instances.length > 0
+    ? cfg.instances
+    : [{ value: cfg.value, net: cfg.net, participants: cfg.participants }];
+
+  const money = {};
+  g.players.forEach(p => money[p.id] = 0);
+  const matches = [];
+
+  instances.forEach((inst, instIdx) => {
+    const partIds = Array.isArray(inst.participants) ? inst.participants : [];
+    const pair = partIds.map(id => g.players.find(p => p.id === id)).filter(Boolean);
+    if (pair.length !== 2) return; // skip incomplete instances
+    const a = pair[0], b = pair[1];
+    const useNet = inst.net !== false; // default to net
+    const value = inst.value || 0;
+
+    let aUp = 0;
+    let played = 0;
+    let closedHole = null;
+    let closedScore = null;
+    const holes = [];
+
+    for (let h = 0; h < 18; h++) {
+      const aRaw = (g.scores[a.id] && g.scores[a.id][h] != null) ? g.scores[a.id][h] : null;
+      const bRaw = (g.scores[b.id] && g.scores[b.id][h] != null) ? g.scores[b.id][h] : null;
+      if (aRaw === null || bRaw === null) break;
+      const aSc = (useNet && g.sis) ? netHoleScore(aRaw, a.hcp, g.sis[h], g.pars[h], g.hcpRules) : aRaw;
+      const bSc = (useNet && g.sis) ? netHoleScore(bRaw, b.hcp, g.sis[h], g.pars[h], g.hcpRules) : bRaw;
+      played++;
+      let res = 'halve';
+      if (aSc < bSc) { aUp++; res = 'a'; }
+      else if (bSc < aSc) { aUp--; res = 'b'; }
+      holes.push({ hole: h + 1, aSc, bSc, res, aUpAfter: aUp });
+
+      const remaining = 18 - played;
+      if (Math.abs(aUp) > remaining) {
+        closedHole = h + 1;
+        closedScore = Math.abs(aUp) + '&' + remaining;
+        break;
+      }
+    }
+
+    const m = {
+      instanceIdx: instIdx,
+      a: a.name, aId: a.id,
+      b: b.name, bId: b.id,
+      played, finalUp: aUp,
+      winner: null,
+      closedHole, closedScore,
+      complete: false,
+      value,
+      holes
+    };
+
+    if (closedHole !== null) {
+      m.winner = aUp > 0 ? a.name : b.name;
+      m.complete = true;
+      if (aUp > 0) { money[a.id] += value; money[b.id] -= value; }
+      else { money[b.id] += value; money[a.id] -= value; }
+    } else if (played === 18) {
+      if (aUp > 0) {
+        m.winner = a.name;
+        m.complete = true;
+        m.closedScore = aUp + ' up';
+        money[a.id] += value; money[b.id] -= value;
+      } else if (aUp < 0) {
+        m.winner = b.name;
+        m.complete = true;
+        m.closedScore = (-aUp) + ' up';
+        money[b.id] += value; money[a.id] -= value;
+      } else {
+        m.winner = 'AS';
+        m.complete = true;
+        m.closedScore = 'AS';
+      }
+    }
+    matches.push(m);
+  });
+
+  if (matches.length === 0) return null;
+  return { money, matches };
+}
+
+// Team match play: 2v2, lowest ball per team is team score. Hole won by team with lower score.
+function calcTeamMatch(g) {
+  if (!g.games.teamMatch) return null;
+  const cfg = g.games.teamMatch;
+  if (!cfg.teamA || !cfg.teamB || cfg.teamA.length !== cfg.teamB.length || cfg.teamA.length === 0) return null;
+
+  const money = {};
+  g.players.forEach(p => money[p.id] = 0);
+
+  const teamA = cfg.teamA.map(id => g.players.find(p => p.id === id)).filter(Boolean);
+  const teamB = cfg.teamB.map(id => g.players.find(p => p.id === id)).filter(Boolean);
+  if (teamA.length !== teamB.length || teamA.length === 0) return null;
+
+  let aHolesWon = 0, bHolesWon = 0, halved = 0;
+  let played = 0;
+  let complete = true;
+  const holes = [];
+
+  for (let h = 0; h < 18; h++) {
+    const aScores = teamA.map(p => {
+      const s = (g.scores[p.id] && g.scores[p.id][h] != null) ? g.scores[p.id][h] : null;
+      if (s === null) return null;
+      return cfg.net && g.sis ? netHoleScore(s, p.hcp, g.sis[h], g.pars[h], g.hcpRules) : s;
+    });
+    const bScores = teamB.map(p => {
+      const s = (g.scores[p.id] && g.scores[p.id][h] != null) ? g.scores[p.id][h] : null;
+      if (s === null) return null;
+      return cfg.net && g.sis ? netHoleScore(s, p.hcp, g.sis[h], g.pars[h], g.hcpRules) : s;
+    });
+    if (aScores.some(s => s === null) || bScores.some(s => s === null)) { complete = false; break; }
+    played++;
+    const aBest = Math.min(...aScores);
+    const bBest = Math.min(...bScores);
+    let res = 'halve';
+    if (aBest < bBest) { aHolesWon++; res = 'a'; }
+    else if (bBest < aBest) { bHolesWon++; res = 'b'; }
+    else halved++;
+    holes.push({ hole: h + 1, aBest, bBest, res });
+  }
+
+  const result = {
+    teamA: teamA.map(p => p.name).join(' & '),
+    teamB: teamB.map(p => p.name).join(' & '),
+    teamAPlayers: teamA, teamBPlayers: teamB,
+    aHolesWon, bHolesWon, halved, played, complete,
+    winner: null,
+    holes
+  };
+
+  if (complete) {
+    if (aHolesWon > bHolesWon) {
+      result.winner = result.teamA;
+      // Each player on losing team pays cfg.value to each player on winning team — but we
+      // do net per-player: winning side gets +cfg.value/teamSize * 2 effectively, but
+      // simpler convention: winners +cfg.value each, losers -cfg.value each. That keeps
+      // the bet-per-player intuitive ("$10 a head").
+      teamA.forEach(p => money[p.id] += cfg.value);
+      teamB.forEach(p => money[p.id] -= cfg.value);
+    } else if (bHolesWon > aHolesWon) {
+      result.winner = result.teamB;
+      teamB.forEach(p => money[p.id] += cfg.value);
+      teamA.forEach(p => money[p.id] -= cfg.value);
+    } else {
+      result.winner = 'Tie';
+    }
+  }
+
+  return { money, result };
+}
+
+// Team low ball: even teams, total of best-ball over 18 holes. Lowest total wins.
+function calcTeamLowball(g) {
+  if (!g.games.teamLowball) return null;
+  const cfg = g.games.teamLowball;
+  if (!cfg.teamA || !cfg.teamB || cfg.teamA.length !== cfg.teamB.length || cfg.teamA.length === 0) return null;
+
+  const money = {};
+  g.players.forEach(p => money[p.id] = 0);
+
+  const teamA = cfg.teamA.map(id => g.players.find(p => p.id === id)).filter(Boolean);
+  const teamB = cfg.teamB.map(id => g.players.find(p => p.id === id)).filter(Boolean);
+  if (teamA.length !== teamB.length || teamA.length === 0) return null;
+
+  let aTotal = 0, bTotal = 0;
+  let complete = true;
+  let played = 0;
+
+  for (let h = 0; h < 18; h++) {
+    const aScores = teamA.map(p => {
+      const s = (g.scores[p.id] && g.scores[p.id][h] != null) ? g.scores[p.id][h] : null;
+      if (s === null) return null;
+      return cfg.net && g.sis ? netHoleScore(s, p.hcp, g.sis[h], g.pars[h], g.hcpRules) : s;
+    });
+    const bScores = teamB.map(p => {
+      const s = (g.scores[p.id] && g.scores[p.id][h] != null) ? g.scores[p.id][h] : null;
+      if (s === null) return null;
+      return cfg.net && g.sis ? netHoleScore(s, p.hcp, g.sis[h], g.pars[h], g.hcpRules) : s;
+    });
+    if (aScores.some(s => s === null) || bScores.some(s => s === null)) { complete = false; break; }
+    played++;
+    aTotal += Math.min(...aScores);
+    bTotal += Math.min(...bScores);
+  }
+
+  const result = {
+    teamA: teamA.map(p => p.name).join(' & '),
+    teamB: teamB.map(p => p.name).join(' & '),
+    teamAPlayers: teamA, teamBPlayers: teamB,
+    aTotal, bTotal, played, complete,
+    winner: null
+  };
+
+  if (complete) {
+    if (aTotal < bTotal) {
+      result.winner = result.teamA;
+      teamA.forEach(p => money[p.id] += cfg.value);
+      teamB.forEach(p => money[p.id] -= cfg.value);
+    } else if (bTotal < aTotal) {
+      result.winner = result.teamB;
+      teamB.forEach(p => money[p.id] += cfg.value);
+      teamA.forEach(p => money[p.id] -= cfg.value);
+    } else {
+      result.winner = 'Tie';
+    }
+  }
+
+  return { money, result };
+}
+
+// Junk
+function calcJunk(g) {
+  if (!g.games.junk || Object.keys(g.games.junk).length === 0) return null;
+  const cfg = g.games.junk;
+  const participants = getParticipants(g, cfg);
+  if (participants.length < 2) return null;
+  const partIds = new Set(participants.map(p => p.id));
+  const money = {};
+  g.players.forEach(p => money[p.id] = 0);
+  const events = [];
+  if (!g.junkData) g.junkData = {};
+  for (let h = 1; h <= 18; h++) {
+    const hd = g.junkData[h] || {};
+    Object.keys(hd).forEach(jt => {
+      let earnerIds = hd[jt];
+      if (earnerIds == null) return;
+      // Normalize: legacy single-id strings become 1-element arrays
+      if (typeof earnerIds === 'string') earnerIds = [earnerIds];
+      if (!Array.isArray(earnerIds) || earnerIds.length === 0) return;
+      // Skip legacy buddyfucker entries — that game lives in p3greenie now
+      if (jt === 'buddyfucker') return;
+      // Only count earners who are participants in the junk side bet
+      earnerIds = earnerIds.filter(id => partIds.has(id));
+      if (earnerIds.length === 0) return;
+
+      const jdef = JUNK_TYPES.find(x => x.id === jt);
+      if (!jdef) return;
+
+      const amt = g.games.junk[jt] || 0;
+      if (amt === 0) return;
+
+      // Each earner gets paid amt from every OTHER participant.
+      earnerIds.forEach(winnerId => {
+        const winner = g.players.find(p => p.id === winnerId);
+        if (!winner) return;
+        participants.forEach(other => {
+          if (other.id === winnerId) return;
+          money[winnerId] += amt;
+          money[other.id] -= amt;
+        });
+        events.push({
+          hole: h,
+          junk: jt,
+          winner: winner.name,
+          winnerId,
+          amt: amt * (participants.length - 1)
+        });
+      });
+    });
+  }
+  return { money, events };
+}
+
+// Par 3 Greenie + Buddy Fucker — its own game (NOT junk).
+// On par 3 holes only. Winner(s) collect $value from each other player IF they
+// made par or better. If Buddy Fucker is enabled and a winner 3-putts, they
+// forfeit the greenie AND owe $bfValue to each other player.
+function calcP3Greenie(g) {
+  if (!g.games.p3greenie) return null;
+  const cfg = g.games.p3greenie;
+  const participants = getParticipants(g, cfg);
+  if (participants.length < 2) return null;
+  const partIds = new Set(participants.map(p => p.id));
+  const money = {};
+  g.players.forEach(p => money[p.id] = 0);
+  const events = [];
+  if (!g.p3greenieData) g.p3greenieData = {};
+
+  for (let h = 1; h <= 18; h++) {
+    if (g.pars[h - 1] !== 3) continue; // par 3s only
+    const hd = g.p3greenieData[h] || {};
+    // Only count winners who are actually participants in this game
+    const winners = (Array.isArray(hd.winners) ? hd.winners : []).filter(id => partIds.has(id));
+    const threePutts = Array.isArray(hd.threePutts) ? hd.threePutts : [];
+    if (winners.length === 0) continue;
+
+    winners.forEach(wid => {
+      const w = g.players.find(p => p.id === wid);
+      if (!w) return;
+      const score = (g.scores[wid] && g.scores[wid][h - 1] != null) ? g.scores[wid][h - 1] : null;
+      const madePar = score != null && score <= g.pars[h - 1];
+      const threePutted = threePutts.includes(wid);
+
+      if (threePutted) {
+        // Forfeited greenie + Buddy Fucker penalty (if BF on). Penalty paid to
+        // OTHER participants only, not non-participants.
+        events.push({
+          hole: h,
+          kind: 'greenie-forfeit',
+          name: w.name + ' forfeited (3-putted)',
+          playerId: wid,
+          amt: 0
+        });
+        if (cfg.bfEnabled !== false && cfg.bfValue > 0) {
+          participants.forEach(other => {
+            if (other.id === wid) return;
+            money[wid] -= cfg.bfValue;
+            money[other.id] += cfg.bfValue;
+          });
+          events.push({
+            hole: h,
+            kind: 'buddyfucker',
+            name: w.name + ' Buddy Fucker',
+            playerId: wid,
+            amt: -cfg.bfValue * (participants.length - 1)
+          });
+        }
+        return;
+      }
+
+      // Not flagged as 3-putt — pay out only if they made par or better
+      if (!madePar) {
+        events.push({
+          hole: h,
+          kind: 'greenie-no-par',
+          name: w.name + ' (winner but didn\'t make par)',
+          playerId: wid,
+          amt: 0
+        });
+        return;
+      }
+
+      // Paid by other participants only
+      participants.forEach(other => {
+        if (other.id === wid) return;
+        money[wid] += cfg.value;
+        money[other.id] -= cfg.value;
+      });
+      events.push({
+        hole: h,
+        kind: 'greenie',
+        name: w.name,
+        playerId: wid,
+        amt: cfg.value * (participants.length - 1)
+      });
+    });
+  }
+  return { money, events };
+}
+
+// ============================================================
+// LEADERBOARD UI
+// ============================================================
+function renderBoard() {
+  const g = state.game;
+  if (!g) return;
+  $('board-code').textContent = g.code;
+
+  // View-only mode UI: show finished-round banner, hide Finish round button.
+  const banner = $('view-only-banner');
+  const finishBtn = $('btn-finish-round');
+  if (state.viewOnlyMode) {
+    if (banner) {
+      banner.style.display = 'block';
+      const detail = $('view-only-banner-detail');
+      if (detail && g.finishedAt) {
+        detail.textContent = `Finished ${new Date(g.finishedAt).toLocaleString()}. Read-only view — tap Reopen to make edits.`;
+      }
+    }
+    if (finishBtn) finishBtn.style.display = 'none';
+  } else {
+    if (banner) banner.style.display = 'none';
+    if (finishBtn) finishBtn.style.display = '';
+  }
+
+  const totals = calcTotals(g);
+  const skins = calcSkins(g);
+  const nassau = calcNassau(g);
+  const stroke = calcStroke(g);
+  const banker = calcBanker(g);
+  const vegas = calcVegas(g);
+  const dvegas = calcDynamicVegas(g);
+  const sixes = calcSixes(g);
+  const wolf = calcWolf(g);
+  const matchPlay = calcMatch(g);
+  const teamMatch = calcTeamMatch(g);
+  const teamLowball = calcTeamLowball(g);
+  const p3greenie = calcP3Greenie(g);
+  const junk = calcJunk(g);
+
+  // Combined money
+  const money = {};
+  g.players.forEach(p => money[p.id] = 0);
+  [skins, nassau, stroke, banker, vegas, dvegas, sixes, wolf, matchPlay, teamMatch, teamLowball, p3greenie, junk].forEach(r => {
+    if (r) g.players.forEach(p => money[p.id] += (r.money[p.id] || 0));
+  });
+
+  const sorted = [...g.players].sort((a, b) => money[b.id] - money[a.id]);
+
+  // SETTLE UP
+  const settlements = calculateSettlements(money, g.players);
+  const sl = $('settle-up-list');
+  sl.innerHTML = '';
+  if (settlements.length === 0) {
+    sl.innerHTML = '<div class="settle-empty">No money owed yet — round in progress or all even</div>';
+  } else {
+    settlements.forEach(s => {
+      const row = document.createElement('div');
+      row.className = 'settle-row';
+      row.innerHTML = `
+        <div class="from">${s.from}</div>
+        <div class="arrow">→</div>
+        <div class="to">${s.to}</div>
+        <div class="amt">$${s.amount.toFixed(2)}</div>
+      `;
+      sl.appendChild(row);
+    });
+    const totalFlow = settlements.reduce((sum, s) => sum + s.amount, 0);
+    const summary = document.createElement('div');
+    summary.className = 'settle-summary';
+    summary.textContent = `${settlements.length} payment${settlements.length > 1 ? 's' : ''} · $${totalFlow.toFixed(2)} total in motion`;
+    sl.appendChild(summary);
+  }
+
+  const mb = $('money-board');
+  mb.innerHTML = '';
+  sorted.forEach((p, i) => {
+    const t = totals[p.id];
+    const m = money[p.id];
+    const cls = m > 0.005 ? 'pos' : (m < -0.005 ? 'neg' : 'zero');
+    const row = document.createElement('div');
+    row.className = 'lb-row';
+    row.innerHTML = `
+      <div class="pos">${i + 1}</div>
+      <div class="name">${p.name}${p.hcp > 0 ? ` <span style="color:var(--text-muted);font-weight:400;font-size:11px">(${p.hcp})</span>` : ''}</div>
+      <div class="score">${t.count > 0 ? `${t.gross} (${t.count}h)` : '—'}</div>
+      <div class="money ${cls}">${signed(m)}</div>
+    `;
+    mb.appendChild(row);
+  });
+
+  // Per-player breakdown
+  const breakdown = $('money-breakdown');
+  let breakdownHtml = '<h3>Per-game breakdown</h3>';
+  const games = [
+    { key: 'Skins', r: skins },
+    { key: 'Nassau', r: nassau },
+    { key: 'Stroke pot', r: stroke },
+    { key: 'Banker', r: banker },
+    { key: 'Vegas', r: vegas },
+    { key: 'Dynamic Vegas', r: dvegas },
+    { key: '6\'s', r: sixes },
+    { key: 'Wolf', r: wolf },
+    { key: 'Match', r: matchPlay },
+    { key: 'Team match', r: teamMatch },
+    { key: 'Team low ball', r: teamLowball },
+    { key: 'Par 3 Greenie', r: p3greenie },
+    { key: 'Junk', r: junk }
+  ].filter(x => x.r);
+
+  if (games.length > 1) {
+    breakdownHtml += '<table style="width:100%;font-size:12px;border-collapse:collapse"><thead><tr><th style="text-align:left;padding:6px 4px;color:var(--text-muted)">Player</th>';
+    games.forEach(x => {
+      breakdownHtml += `<th style="text-align:right;padding:6px 4px;color:var(--text-muted)">${x.key}</th>`;
+    });
+    breakdownHtml += '<th style="text-align:right;padding:6px 4px">Total</th></tr></thead><tbody>';
+    sorted.forEach(p => {
+      breakdownHtml += `<tr style="border-top:1px solid var(--border)"><td style="padding:6px 4px;font-weight:500">${p.name}</td>`;
+      games.forEach(x => {
+        const v = x.r.money[p.id] || 0;
+        const cls = v > 0.005 ? 'pos' : (v < -0.005 ? 'neg' : 'zero');
+        breakdownHtml += `<td class="money ${cls}" style="padding:6px 4px;text-align:right;font-variant-numeric:tabular-nums">${Math.abs(v) < 0.005 ? '—' : signed(v)}</td>`;
+      });
+      const tot = money[p.id];
+      const tcls = tot > 0.005 ? 'pos' : (tot < -0.005 ? 'neg' : 'zero');
+      breakdownHtml += `<td class="money ${tcls}" style="padding:6px 4px;text-align:right;font-weight:600;font-variant-numeric:tabular-nums">${signed(tot)}</td>`;
+      breakdownHtml += '</tr>';
+    });
+    breakdownHtml += '</tbody></table>';
+    breakdown.innerHTML = breakdownHtml;
+    breakdown.style.display = 'block';
+  } else {
+    breakdown.style.display = 'none';
+  }
+
+  // Scorecard
+  renderScorecard(g, totals);
+
+  // Game results
+  const gr = $('game-results-list');
+  gr.innerHTML = '';
+
+  if (skins) {
+    const div = document.createElement('div');
+    div.className = 'game-result';
+    div.innerHTML = `<div class="head"><span class="lbl">Skins ($${g.games.skins.value} per skin)</span><span class="val">${skins.results.filter(r => r.winnerId).length} won · $${skins.carry.toFixed(2)} carrying</span></div>`;
+    if (skins.results.length > 0) {
+      const showAll = state.skinsShowAll || false;
+      const rowsToShow = showAll ? skins.results : skins.results.slice(-6);
+      const hidden = skins.results.length - rowsToShow.length;
+      let lines = rowsToShow.map(r => {
+        if (r.tied) return `<div class="sub">H${r.hole}: ${r.winner}</div>`;
+        return `<div class="sub">H${r.hole}: ${r.winner} +$${r.amount.toFixed(2)}${r.split ? ' (split)' : ''}${r.carried > 0 ? ` (incl. $${r.carried.toFixed(2)} carry)` : ''}</div>`;
+      }).join('');
+      div.innerHTML += lines;
+      if (hidden > 0) {
+        div.innerHTML += `<button class="small skins-show-all" style="margin-top:8px;width:100%">Show all ${skins.results.length} holes (${hidden} earlier)</button>`;
+      } else if (showAll && skins.results.length > 6) {
+        div.innerHTML += `<button class="small skins-show-all" style="margin-top:8px;width:100%">Show only last 6 holes</button>`;
+      }
+    }
+    gr.appendChild(div);
+    const toggleBtn = div.querySelector('.skins-show-all');
+    if (toggleBtn) toggleBtn.onclick = () => { state.skinsShowAll = !state.skinsShowAll; renderBoard(); };
+  }
+
+  if (nassau) {
+    const div = document.createElement('div');
+    div.className = 'game-result';
+    const numInst = nassau.matches.length;
+    div.innerHTML = `<div class="head"><span class="lbl">Nassau (${numInst} match${numInst > 1 ? 'es' : ''})</span></div>`;
+    nassau.matches.forEach(m => {
+      const fmtLabel = ((nassau.instances && nassau.instances[m.instanceIdx] && nassau.instances[m.instanceIdx].format) || 'stroke') === 'match' ? 'match' : 'stroke';
+      const valStr = m.value != null ? ` · $${m.value}/side · ${fmtLabel}` : '';
+      div.innerHTML += `<div class="sub">${m.a} vs ${m.b}${valStr}: F=${m.front || '—'} · B=${m.back || '—'} · O=${m.overall || '—'}</div>`;
+    });
+    if (nassau.huckles && nassau.huckles.length > 0) {
+      div.innerHTML += `<div class="sub" style="margin-top:6px;font-weight:600;color:var(--info)">Huckles:</div>`;
+      nassau.huckles.forEach(h => {
+        const callerName = (g.players.find(p => p.id === h.callerId) || {}).name || '?';
+        const opponentName = (g.players.find(p => p.id === h.opponentId) || {}).name || '?';
+        const segLbl = h.segment === 'front' ? 'F9' : (h.segment === 'back' ? 'B9' : 'O18');
+        const result = h.winnerName ? (h.winnerName + ' won (' + h.status + ')') : ('called h' + h.callHole + ' — ' + h.status);
+        div.innerHTML += `<div class="sub">${callerName} vs ${opponentName} (${segLbl} from h${h.callHole}): ${result}</div>`;
+      });
+    }
+    if (nassau.specials && nassau.specials.length > 0) {
+      div.innerHTML += `<div class="sub" style="margin-top:6px;font-weight:600;color:var(--gold)">Special-score payouts:</div>`;
+      nassau.specials.forEach(sp => {
+        div.innerHTML += `<div class="sub">H${sp.hole}: ${sp.player} ${sp.kind.toLowerCase()} +$${sp.amt}</div>`;
+      });
+    }
+    gr.appendChild(div);
+  }
+
+  if (stroke) {
+    const div = document.createElement('div');
+    div.className = 'game-result';
+    if (stroke.complete) {
+      div.innerHTML = `<div class="head"><span class="lbl">Stroke pot</span><span class="val">${stroke.winners.join(', ')} +$${stroke.winShare.toFixed(2)}</span></div>
+        <div class="sub">Pot $${stroke.pot.toFixed(2)} · ${g.games.stroke.net ? 'net' : 'gross'}</div>`;
+    } else {
+      div.innerHTML = `<div class="head"><span class="lbl">Stroke pot</span><span class="val">$${stroke.pot.toFixed(2)} pot</span></div>
+        <div class="sub">Round in progress</div>`;
+    }
+    gr.appendChild(div);
+  }
+
+  if (banker) {
+    const div = document.createElement('div');
+    div.className = 'game-result';
+    div.innerHTML = `<div class="head">
+      <span class="lbl">Banker</span>
+      <span class="val">${banker.holeResults.length} holes complete</span>
+    </div>`;
+
+    if (banker.holeResults.length === 0) {
+      div.innerHTML += `<div class="sub">No completed holes yet.</div>`;
+    } else {
+      // Show all completed banker holes in a structured table-style list
+      const showAll = state.bankerShowAll || false;
+      const rowsToShow = showAll ? banker.holeResults : banker.holeResults.slice(-6);
+      const hidden = banker.holeResults.length - rowsToShow.length;
+
+      rowsToShow.forEach(r => {
+        // Net win for banker on this hole = sum of wins - sum of losses
+        const bankerNet = r.matchups.reduce((sum, m) => {
+          if (m.outcome === 'banker') return sum + m.wager;
+          if (m.outcome === 'player') return sum - m.wager;
+          return sum;
+        }, 0);
+        const sign = bankerNet >= 0 ? '+' : '−';
+        const colorClass = bankerNet > 0.005 ? 'pos' : (bankerNet < -0.005 ? 'neg' : 'zero');
+
+        let html = `<div class="banker-hole-card">
+          <div class="banker-hole-header">
+            <strong>H${r.hole}</strong>
+            <span class="banker-name-tag">${r.banker} (banker)</span>
+            ${r.birdieDoubled ? '<span class="banker-birdie-tag">🐦 birdie 2x</span>' : ''}
+            <span class="money ${colorClass}" style="margin-left:auto;font-variant-numeric:tabular-nums">${sign}$${Math.abs(bankerNet).toFixed(2)}</span>
+          </div>`;
+
+        // Each matchup as its own line
+        r.matchups.forEach(m => {
+          let outcomeLabel, outcomeClass;
+          if (m.outcome === 'banker') {
+            outcomeLabel = `−$${m.wager.toFixed(2)}`;
+            outcomeClass = 'neg';
+          } else if (m.outcome === 'player') {
+            outcomeLabel = `+$${m.wager.toFixed(2)}`;
+            outcomeClass = 'pos';
+          } else {
+            outcomeLabel = 'tie';
+            outcomeClass = 'zero';
+          }
+          const multStr = m.mult > 1 ? ` <span class="banker-mult">${m.mult}x</span>` : '';
+          html += `<div class="banker-matchup">
+            <span class="banker-matchup-name">${m.player}</span>
+            <span class="banker-matchup-bet small-text">$${m.bet.toFixed(2)}${multStr}</span>
+            <span class="money ${outcomeClass}" style="font-variant-numeric:tabular-nums">${outcomeLabel}</span>
+          </div>`;
+        });
+
+        html += `</div>`;
+        div.innerHTML += html;
+      });
+
+      if (hidden > 0) {
+        div.innerHTML += `<button class="small banker-show-all" style="margin-top:8px;width:100%">Show all ${banker.holeResults.length} holes (${hidden} earlier)</button>`;
+      } else if (showAll && banker.holeResults.length > 6) {
+        div.innerHTML += `<button class="small banker-show-all" style="margin-top:8px;width:100%">Show only last 6 holes</button>`;
+      }
+    }
+
+    gr.appendChild(div);
+
+    // Wire the toggle button
+    const toggleBtn = div.querySelector('.banker-show-all');
+    if (toggleBtn) {
+      toggleBtn.onclick = () => {
+        state.bankerShowAll = !state.bankerShowAll;
+        renderBoard();
+      };
+    }
+  }
+
+  if (vegas) {
+    const div = document.createElement('div');
+    div.className = 'game-result';
+    div.innerHTML = `<div class="head"><span class="lbl">Vegas ($${g.games.vegas.value.toFixed(2)}/pt)</span><span class="val">${vegas.holeResults.length} holes</span></div>`;
+    const showAll = state.vegasShowAll || false;
+    const rowsToShow = showAll ? vegas.holeResults : vegas.holeResults.slice(-6);
+    const hidden = vegas.holeResults.length - rowsToShow.length;
+    rowsToShow.forEach(r => {
+      const winnerStr = r.winner === 'Tie' ? 'Tie' : r.winner + ' wins ' + r.points + 'pt';
+      const multStr = r.multiplier > 1 ? ` (${r.multiplier}x)` : '';
+      const notes = [r.streakNote, r.flipNote].filter(Boolean).join(' · ');
+      div.innerHTML += `<div class="sub">H${r.hole}: ${r.aScore} vs ${r.bScore} → ${winnerStr}${multStr}${notes ? ' · ' + notes : ''}</div>`;
+    });
+    if (hidden > 0) {
+      div.innerHTML += `<button class="small vegas-show-all" style="margin-top:8px;width:100%">Show all ${vegas.holeResults.length} holes (${hidden} earlier)</button>`;
+    } else if (showAll && vegas.holeResults.length > 6) {
+      div.innerHTML += `<button class="small vegas-show-all" style="margin-top:8px;width:100%">Show only last 6 holes</button>`;
+    }
+    gr.appendChild(div);
+    const tgl = div.querySelector('.vegas-show-all');
+    if (tgl) tgl.onclick = () => { state.vegasShowAll = !state.vegasShowAll; renderBoard(); };
+  }
+
+  if (dvegas) {
+    const div = document.createElement('div');
+    div.className = 'game-result';
+    div.innerHTML = `<div class="head"><span class="lbl">Dynamic Vegas ($${g.games.dvegas.value.toFixed(2)}/pt)</span><span class="val">${dvegas.holeResults.length} holes</span></div>`;
+    const showAll = state.dvegasShowAll || false;
+    const rowsToShow = showAll ? dvegas.holeResults : dvegas.holeResults.slice(-6);
+    const hidden = dvegas.holeResults.length - rowsToShow.length;
+    rowsToShow.forEach(r => {
+      const winnerStr = r.winner === 'Tie' ? 'Tie' : r.winner + ' wins ' + r.points + 'pt';
+      const multStr = r.multiplier > 1 ? ` (${r.multiplier}x)` : '';
+      const notes = [r.streakNote, r.flipNote].filter(Boolean).join(' · ');
+      div.innerHTML += `<div class="sub">H${r.hole}: ${r.teamA} (${r.aScore}) vs ${r.teamB} (${r.bScore}) → ${winnerStr}${multStr}${notes ? ' · ' + notes : ''}</div>`;
+    });
+    if (hidden > 0) {
+      div.innerHTML += `<button class="small dvegas-show-all" style="margin-top:8px;width:100%">Show all ${dvegas.holeResults.length} holes (${hidden} earlier)</button>`;
+    } else if (showAll && dvegas.holeResults.length > 6) {
+      div.innerHTML += `<button class="small dvegas-show-all" style="margin-top:8px;width:100%">Show only last 6 holes</button>`;
+    }
+    gr.appendChild(div);
+    const tgl = div.querySelector('.dvegas-show-all');
+    if (tgl) tgl.onclick = () => { state.dvegasShowAll = !state.dvegasShowAll; renderBoard(); };
+  }
+
+  if (sixes) {
+    const div = document.createElement('div');
+    div.className = 'game-result';
+    div.innerHTML = `<div class="head"><span class="lbl">6's</span></div>`;
+    sixes.segments.forEach(s => {
+      div.innerHTML += `<div class="sub">Seg ${s.seg}: ${s.teamA} (${s.aScore || '—'}) vs ${s.teamB} (${s.bScore || '—'})${s.winner ? ` — ${s.winner === 'Tie' ? 'Tie' : s.winner + ' wins'}` : ' — in progress'}</div>`;
+    });
+    gr.appendChild(div);
+  }
+
+  if (wolf) {
+    const div = document.createElement('div');
+    div.className = 'game-result';
+    div.innerHTML = `<div class="head"><span class="lbl">Wolf</span><span class="val">${wolf.holeResults.length} holes</span></div>`;
+    const showAll = state.wolfShowAll || false;
+    const rowsToShow = showAll ? wolf.holeResults : wolf.holeResults.slice(-6);
+    const hidden = wolf.holeResults.length - rowsToShow.length;
+    rowsToShow.forEach(r => {
+      const choice = r.choice === 'lone' ? 'Lone' : r.choice === 'blind' ? 'Blind' : 'Partner';
+      div.innerHTML += `<div class="sub">H${r.hole} ${r.captain} (${choice}, ${r.mult}x): ${r.winner === 'Tie' ? 'Tie' : r.winner + ' wins'}</div>`;
+    });
+    if (hidden > 0) {
+      div.innerHTML += `<button class="small wolf-show-all" style="margin-top:8px;width:100%">Show all ${wolf.holeResults.length} holes (${hidden} earlier)</button>`;
+    } else if (showAll && wolf.holeResults.length > 6) {
+      div.innerHTML += `<button class="small wolf-show-all" style="margin-top:8px;width:100%">Show only last 6 holes</button>`;
+    }
+    gr.appendChild(div);
+    const tgl = div.querySelector('.wolf-show-all');
+    if (tgl) tgl.onclick = () => { state.wolfShowAll = !state.wolfShowAll; renderBoard(); };
+  }
+
+  if (matchPlay) {
+    const div = document.createElement('div');
+    div.className = 'game-result';
+    const completed = matchPlay.matches.filter(m => m.complete).length;
+    const numInst = matchPlay.matches.length;
+    div.innerHTML = `<div class="head"><span class="lbl">Match play (${numInst} match${numInst > 1 ? 'es' : ''})</span><span class="val">${completed}/${numInst} done</span></div>`;
+    matchPlay.matches.forEach(m => {
+      const valStr = m.value != null ? ` · $${m.value}` : '';
+      let line;
+      if (m.complete) {
+        if (m.winner === 'AS') {
+          line = `${m.a} vs ${m.b}: All square (no money)${valStr}`;
+        } else {
+          line = `${m.winner} def. ${m.winner === m.a ? m.b : m.a} ${m.closedScore || ''}${valStr}`;
+        }
+      } else {
+        const lead = m.finalUp;
+        const lbl = lead === 0 ? 'AS' : (lead > 0 ? `${m.a} ${lead} up` : `${m.b} ${-lead} up`);
+        line = `${m.a} vs ${m.b}: ${lbl} (thru ${m.played})${valStr}`;
+      }
+      div.innerHTML += `<div class="sub">${line}</div>`;
+    });
+    gr.appendChild(div);
+  }
+
+  if (teamMatch && teamMatch.result) {
+    const r = teamMatch.result;
+    const div = document.createElement('div');
+    div.className = 'game-result';
+    div.innerHTML = `<div class="head"><span class="lbl">Team match ($${g.games.teamMatch.value} per player)</span></div>`;
+    let line;
+    if (r.complete) {
+      if (r.winner === 'Tie') {
+        line = `${r.teamA} vs ${r.teamB} — All square ${r.aHolesWon}-${r.bHolesWon} (${r.halved} halved)`;
+      } else {
+        const winningHoles = Math.max(r.aHolesWon, r.bHolesWon);
+        const losingHoles = Math.min(r.aHolesWon, r.bHolesWon);
+        line = `${r.winner} won ${winningHoles}-${losingHoles}${r.halved ? ` (${r.halved} halved)` : ''}`;
+      }
+    } else {
+      line = `${r.teamA} ${r.aHolesWon} — ${r.bHolesWon} ${r.teamB} (thru ${r.played}, ${r.halved} halved)`;
+    }
+    div.innerHTML += `<div class="sub">${line}</div>`;
+    gr.appendChild(div);
+  }
+
+  if (teamLowball && teamLowball.result) {
+    const r = teamLowball.result;
+    const div = document.createElement('div');
+    div.className = 'game-result';
+    div.innerHTML = `<div class="head"><span class="lbl">Team low ball ($${g.games.teamLowball.value} per player)</span></div>`;
+    let line;
+    if (r.complete) {
+      if (r.winner === 'Tie') {
+        line = `${r.teamA} ${r.aTotal} — ${r.bTotal} ${r.teamB} (Tie)`;
+      } else {
+        line = `${r.teamA} ${r.aTotal} — ${r.bTotal} ${r.teamB} → ${r.winner} wins`;
+      }
+    } else {
+      line = `${r.teamA} ${r.aTotal || '—'} — ${r.bTotal || '—'} ${r.teamB} (thru ${r.played})`;
+    }
+    div.innerHTML += `<div class="sub">${line}</div>`;
+    gr.appendChild(div);
+  }
+
+  if (p3greenie) {
+    const div = document.createElement('div');
+    div.className = 'game-result';
+    const cfg = g.games.p3greenie;
+    const bfNote = (cfg.bfEnabled !== false) ? ` · Buddy Fucker $${cfg.bfValue}` : '';
+    div.innerHTML = `<div class="head"><span class="lbl">⛳ Par 3 Greenie ($${cfg.value}${bfNote})</span><span class="val">${p3greenie.events.length} event${p3greenie.events.length === 1 ? '' : 's'}</span></div>`;
+    p3greenie.events.forEach(e => {
+      let lbl = '';
+      if (e.kind === 'greenie') lbl = '🟢 ' + e.name + ' won greenie';
+      else if (e.kind === 'greenie-forfeit') lbl = '⚠️ ' + e.name;
+      else if (e.kind === 'buddyfucker') lbl = '💩 ' + e.name;
+      else if (e.kind === 'greenie-no-par') lbl = '✗ ' + e.name;
+      const amtStr = e.amt > 0 ? ' +$' + e.amt.toFixed(2) : (e.amt < 0 ? ' -$' + Math.abs(e.amt).toFixed(2) : '');
+      div.innerHTML += `<div class="sub">H${e.hole} ${lbl}${amtStr}</div>`;
+    });
+    gr.appendChild(div);
+  }
+
+  if (junk) {
+    const div = document.createElement('div');
+    div.className = 'game-result';
+    div.innerHTML = `<div class="head"><span class="lbl">Junk</span><span class="val">${junk.events.length} earned</span></div>`;
+    junk.events.forEach(e => {
+      const jdef = JUNK_TYPES.find(x => x.id === e.junk);
+      div.innerHTML += `<div class="sub">H${e.hole} ${jdef ? jdef.name : e.junk}: ${e.winner} +$${e.amt.toFixed(2)}</div>`;
+    });
+    gr.appendChild(div);
+  }
+
+  if (gr.innerHTML === '') {
+    gr.innerHTML = '<div class="small-text">No betting games configured</div>';
+  }
+}
+
+function renderScorecard(g, totals) {
+  const t = $('scorecard');
+  let html = '<thead><tr><th>Player</th>';
+  for (let i = 1; i <= 9; i++) html += `<th>${i}</th>`;
+  html += '<th>Out</th>';
+  for (let i = 10; i <= 18; i++) html += `<th>${i}</th>`;
+  html += '<th>In</th><th>Tot</th></tr>';
+  html += '<tr><td class="par-row">Par</td>';
+  let outPar = 0, inPar = 0;
+  for (let i = 0; i < 9; i++) { html += `<td class="par-row">${g.pars[i]}</td>`; outPar += g.pars[i]; }
+  html += `<td class="par-row">${outPar}</td>`;
+  for (let i = 9; i < 18; i++) { html += `<td class="par-row">${g.pars[i]}</td>`; inPar += g.pars[i]; }
+  html += `<td class="par-row">${inPar}</td><td class="par-row">${outPar + inPar}</td></tr></thead>`;
+  html += '<tbody>';
+  g.players.forEach(p => {
+    const arr = g.scores[p.id] || [];
+    html += `<tr><td class="player-name">${p.name}</td>`;
+    let out = 0, inT = 0;
+    for (let i = 0; i < 9; i++) {
+      const s = arr[i];
+      const strokes = g.sis ? strokesOnHole(p.hcp, g.sis[i], g.pars[i], g.hcpRules) : 0;
+      const dot = strokes > 0 ? `<span class="pop-dot${strokes > 1 ? ' pop-multi' : ''}"></span>` : '';
+      if (s != null) {
+        out += s;
+        const diff = s - g.pars[i];
+        let cls = '';
+        if (diff <= -2) cls = 'eagle';
+        else if (diff === -1) cls = 'birdie';
+        html += `<td class="${cls}" style="position:relative">${dot}${s}</td>`;
+      } else html += `<td style="position:relative">${dot}—</td>`;
+    }
+    html += `<td class="total">${out || '—'}</td>`;
+    for (let i = 9; i < 18; i++) {
+      const s = arr[i];
+      const strokes = g.sis ? strokesOnHole(p.hcp, g.sis[i], g.pars[i], g.hcpRules) : 0;
+      const dot = strokes > 0 ? `<span class="pop-dot${strokes > 1 ? ' pop-multi' : ''}"></span>` : '';
+      if (s != null) {
+        inT += s;
+        const diff = s - g.pars[i];
+        let cls = '';
+        if (diff <= -2) cls = 'eagle';
+        else if (diff === -1) cls = 'birdie';
+        html += `<td class="${cls}" style="position:relative">${dot}${s}</td>`;
+      } else html += `<td style="position:relative">${dot}—</td>`;
+    }
+    html += `<td class="total">${inT || '—'}</td>`;
+    html += `<td class="total">${(out + inT) || '—'}</td></tr>`;
+  });
+  html += '</tbody>';
+  t.innerHTML = html;
+}
+
+// ============================================================
+// HOME PANEL
+// ============================================================
+async function renderHome() {
+  // Home is intentionally minimal — just the background art and Quick start.
+  // Tournaments live exclusively under the Events tab now.
+  updateActiveRoundBar();
+}
+
+// Update the fixed bottom bar showing the active round, if any.
+// Called from renderHome and from anywhere the game state changes.
+function updateActiveRoundBar() {
+  const bar = $('active-round-bar');
+  if (!bar) return;
+  // Only show on the Home tab — it's a launcher, not a status bar
+  const homePanel = document.getElementById('panel-home');
+  const onHome = homePanel && homePanel.classList.contains('active');
+  if (state.game && onHome) {
+    document.body.classList.add('has-active-bar');
+    bar.style.display = 'block';
+    $('active-round-bar-info').innerHTML = `
+      <div><strong>${state.game.course}</strong> · ${state.game.players.length} players</div>
+      <div style="color:var(--text-muted);font-size:11px">Code <strong style="color:var(--accent)">${state.game.code}</strong> · active round</div>
+    `;
+  } else {
+    document.body.classList.remove('has-active-bar');
+    bar.style.display = 'none';
+  }
+}
+
+// Build the HTML for the end-of-round summary modal — totals, settle-up, per-game breakdown
+function buildRoundSummary(g) {
+  if (!g) return '<p>No round data.</p>';
+
+  const totals = calcTotals(g);
+  const skins = calcSkins(g);
+  const nassau = calcNassau(g);
+  const stroke = calcStroke(g);
+  const banker = calcBanker(g);
+  const vegas = calcVegas(g);
+  const dvegas = calcDynamicVegas(g);
+  const sixes = calcSixes(g);
+  const wolf = calcWolf(g);
+  const matchPlay = calcMatch(g);
+  const teamMatch = calcTeamMatch(g);
+  const teamLowball = calcTeamLowball(g);
+  const p3greenie = calcP3Greenie(g);
+  const junk = calcJunk(g);
+
+  const games = [
+    { name: 'Skins', r: skins },
+    { name: 'Nassau', r: nassau },
+    { name: 'Stroke pot', r: stroke },
+    { name: 'Banker', r: banker },
+    { name: 'Vegas', r: vegas },
+    { name: 'Dynamic Vegas', r: dvegas },
+    { name: '6\'s', r: sixes },
+    { name: 'Wolf', r: wolf },
+    { name: 'Match play', r: matchPlay },
+    { name: 'Team match', r: teamMatch },
+    { name: 'Team low ball', r: teamLowball },
+    { name: 'Par 3 Greenie', r: p3greenie },
+    { name: 'Junk', r: junk }
+  ].filter(x => x.r);
+
+  // Combined money
+  const money = {};
+  g.players.forEach(p => money[p.id] = 0);
+  games.forEach(g2 => g.players.forEach(p => money[p.id] += (g2.r.money[p.id] || 0)));
+
+  const sorted = [...g.players].sort((a, b) => money[b.id] - money[a.id]);
+  const settlements = calculateSettlements(money, g.players);
+
+  // Holes completed (any player with a score)
+  let holesCompleted = 0;
+  for (let h = 0; h < 18; h++) {
+    if (g.players.some(p => g.scores[p.id] && g.scores[p.id][h] != null)) holesCompleted++;
+  }
+
+  let html = '';
+
+  // Final standings
+  html += `<h3 style="margin:0 0 8px">Final standings</h3>`;
+  html += `<div style="border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:14px">`;
+  sorted.forEach((p, i) => {
+    const m = money[p.id] || 0;
+    const t = totals[p.id] || { gross: 0, net: 0, count: 0 };
+    const grossStr = t.count > 0 ? t.gross : '—';
+    const netStr = t.count > 0 ? t.net : '—';
+    const cls = m > 0.005 ? 'color:var(--accent)' : (m < -0.005 ? 'color:var(--danger)' : 'color:var(--text-muted)');
+    html += `<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 12px;${i > 0 ? 'border-top:1px solid var(--border);' : ''}">
+      <div style="flex:1">
+        <strong>${i + 1}. ${p.name}</strong>
+        <div class="small-text" style="font-size:11px">Gross ${grossStr} · Net ${netStr}</div>
+      </div>
+      <div style="font-weight:600;${cls}">${fmt(m)}</div>
+    </div>`;
+  });
+  html += `</div>`;
+
+  // Settle up
+  html += `<h3 style="margin:0 0 8px">Settle up</h3>`;
+  if (settlements.length === 0) {
+    html += `<div class="help-text" style="margin-bottom:14px">No money owed — everyone's even.</div>`;
+  } else {
+    html += `<div style="border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-bottom:14px">`;
+    settlements.forEach((s, i) => {
+      html += `<div style="display:flex;justify-content:space-between;align-items:center;padding:9px 12px;${i > 0 ? 'border-top:1px solid var(--border);' : ''}">
+        <div><strong>${s.from}</strong> → <strong>${s.to}</strong></div>
+        <div style="font-weight:600;color:var(--accent)">$${s.amount.toFixed(2)}</div>
+      </div>`;
+    });
+    html += `</div>`;
+  }
+
+  // Per-game breakdown
+  if (games.length > 0) {
+    html += `<h3 style="margin:0 0 8px">By game</h3>`;
+    html += `<div style="border:1px solid var(--border);border-radius:8px;overflow:hidden;font-size:12px">`;
+    html += `<div style="display:flex;background:var(--bg-2);padding:7px 10px;font-weight:600;border-bottom:1px solid var(--border)">
+      <div style="flex:1.4">Game</div>
+      ${g.players.map(p => `<div style="flex:1;text-align:right;font-size:11px">${p.name.length > 7 ? p.name.slice(0,7) + '…' : p.name}</div>`).join('')}
+    </div>`;
+    games.forEach((gm, i) => {
+      html += `<div style="display:flex;padding:7px 10px;${i > 0 ? 'border-top:1px solid var(--border);' : ''}">
+        <div style="flex:1.4;font-weight:500">${gm.name}</div>
+        ${g.players.map(p => {
+          const v = gm.r.money[p.id] || 0;
+          const cls = v > 0.005 ? 'color:var(--accent)' : (v < -0.005 ? 'color:var(--danger)' : 'color:var(--text-muted)');
+          return `<div style="flex:1;text-align:right;${cls}">${fmt(v)}</div>`;
+        }).join('')}
+      </div>`;
+    });
+    html += `</div>`;
+  }
+
+  return html;
+}
+
+// Render the Rounds tab — full list of saved rounds with open/delete/clear-all
+// ============================================================
+// STATS PANEL
+// ============================================================
+const KEY_ME = 'golf:me-name';
+
+async function getMeName() {
+  return await safeGet(KEY_ME, false);
+}
+async function setMeName(name) {
+  return await safeSet(KEY_ME, name || '', false);
+}
+
+async function renderStats() {
+  const roster = await getPlayerRoster();
+  const select = $('stats-player-select');
+  if (!select) return;
+  // Sort roster: "me" first, then by lastUsed desc
+  const meName = await getMeName();
+  const sorted = [...roster].sort((a, b) => {
+    if (meName) {
+      if (a.name === meName) return -1;
+      if (b.name === meName) return 1;
+    }
+    return (b.lastUsed || 0) - (a.lastUsed || 0);
+  });
+
+  if (sorted.length === 0) {
+    select.innerHTML = '<option value="">No players in roster yet</option>';
+    $('stats-empty-hint').style.display = 'block';
+    $('stats-empty-hint').textContent = 'Finish a round to start tracking. Players are auto-added to the roster after their first round.';
+    $('stats-kpi-card').style.display = 'none';
+    $('stats-sparkline-card').style.display = 'none';
+    $('stats-rounds-card').style.display = 'none';
+    return;
+  }
+  // Preserve current selection if still valid; otherwise pick "me" or first
+  const prevValue = select.value;
+  select.innerHTML = sorted.map(p => {
+    const isMe = meName && p.name === meName;
+    return `<option value="${p.name}">${isMe ? '⭐ ' : ''}${p.name}${isMe ? ' (me)' : ''}</option>`;
+  }).join('');
+  if (prevValue && sorted.find(p => p.name === prevValue)) {
+    select.value = prevValue;
+  } else if (meName && sorted.find(p => p.name === meName)) {
+    select.value = meName;
+  } else {
+    select.value = sorted[0].name;
+  }
+
+  await renderStatsForSelectedPlayer();
+}
+
+async function renderStatsForSelectedPlayer() {
+  const select = $('stats-player-select');
+  if (!select) return;
+  const name = select.value;
+  const roster = await getPlayerRoster();
+  const player = roster.find(p => p.name === name);
+  if (!player) return;
+  const history = Array.isArray(player.scoreHistory) ? player.scoreHistory : [];
+
+  if (history.length === 0) {
+    $('stats-empty-hint').style.display = 'block';
+    $('stats-empty-hint').textContent = `No rounds stored yet for ${name}. Finish a round (with course rating & slope set) to start tracking.`;
+    $('stats-kpi-card').style.display = 'none';
+    $('stats-sparkline-card').style.display = 'none';
+    $('stats-rounds-card').style.display = 'none';
+    return;
+  }
+
+  $('stats-empty-hint').style.display = 'none';
+  $('stats-kpi-card').style.display = 'block';
+
+  // KPIs
+  const calc = calcHandicapIndex(history);
+  $('stats-hcp').textContent = calc.index != null ? calc.index : '—';
+  $('stats-hcp-basis').textContent = calc.basis || '';
+  $('stats-rounds').textContent = history.length;
+  const validGross = history.filter(s => s.gross != null);
+  const avgGross = validGross.length > 0
+    ? Math.round(validGross.reduce((a, b) => a + b.gross, 0) / validGross.length)
+    : '—';
+  $('stats-avg-gross').textContent = avgGross;
+  const validMoney = history.filter(s => typeof s.money === 'number');
+  const lifetimeMoney = validMoney.reduce((a, b) => a + b.money, 0);
+  if (validMoney.length === 0) {
+    $('stats-lifetime-money').textContent = '—';
+    $('stats-lifetime-money').style.color = '';
+  } else {
+    const sign = lifetimeMoney >= 0 ? '+' : '−';
+    const abs = Math.abs(lifetimeMoney);
+    $('stats-lifetime-money').textContent = sign + '$' + abs.toFixed(2);
+    $('stats-lifetime-money').style.color = lifetimeMoney >= 0 ? 'var(--accent)' : 'var(--danger)';
+  }
+
+  // Sparkline — handicap index over time
+  if (history.length >= 3) {
+    $('stats-sparkline-card').style.display = 'block';
+    renderSparkline(history);
+  } else {
+    $('stats-sparkline-card').style.display = 'none';
+  }
+
+  // Round list
+  $('stats-rounds-card').style.display = 'block';
+  const list = $('stats-rounds-list');
+  list.innerHTML = '';
+  // Sort newest first
+  const sortedRounds = [...history].sort((a, b) => (b.date || 0) - (a.date || 0));
+  sortedRounds.forEach(s => {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid var(--border)';
+    const dateStr = s.date ? new Date(s.date).toLocaleDateString() : '—';
+    let moneyChip = '';
+    if (typeof s.money === 'number') {
+      const sign = s.money >= 0 ? '+' : '−';
+      const color = s.money >= 0 ? 'var(--accent)' : 'var(--danger)';
+      moneyChip = `<span style="color:${color};font-weight:600">${sign}$${Math.abs(s.money).toFixed(2)}</span>`;
+    } else {
+      moneyChip = '<span class="small-text" style="color:var(--text-muted)">—</span>';
+    }
+    const teeStr = s.teeLabel ? ` · ${s.teeLabel}` : '';
+    const diffStr = s.differential != null ? ` · diff ${s.differential.toFixed(1)}` : '';
+    row.innerHTML = `
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:500;font-size:14px">${s.course || 'Untitled'}${teeStr}</div>
+        <div class="small-text" style="font-size:11px;color:var(--text-muted)">${dateStr} · gross ${s.gross != null ? s.gross : '—'}${diffStr}</div>
+      </div>
+      <div>${moneyChip}</div>
+    `;
+    list.appendChild(row);
+  });
+  if (list.lastChild) list.lastChild.style.borderBottom = 'none';
+}
+
+// Render an SVG sparkline of handicap index over time. Walks through the
+// player's history forward, recomputing the index after each round was added.
+function renderSparkline(history) {
+  const container = $('stats-sparkline');
+  if (!container) return;
+  // Sort oldest first
+  const sorted = [...history].filter(s => s.differential != null).sort((a, b) => (a.date || 0) - (b.date || 0));
+  if (sorted.length < 3) {
+    container.innerHTML = '<p class="small-text" style="color:var(--text-muted)">Need 3+ rounds with rating/slope to draw the trend.</p>';
+    return;
+  }
+  // Walk forward, calc handicap after each round added
+  const points = [];
+  for (let i = 3; i <= sorted.length; i++) {
+    const slice = sorted.slice(0, i);
+    const calc = calcHandicapIndex(slice);
+    if (calc.index != null) points.push({ n: i, idx: calc.index });
+  }
+  if (points.length === 0) {
+    container.innerHTML = '<p class="small-text" style="color:var(--text-muted)">Not enough data.</p>';
+    return;
+  }
+  const w = 320, h = 90;
+  const pad = 22;
+  const minIdx = Math.min(...points.map(p => p.idx));
+  const maxIdx = Math.max(...points.map(p => p.idx));
+  const range = Math.max(1, maxIdx - minIdx);
+  const xStep = (w - pad * 2) / Math.max(1, points.length - 1);
+  const polyPoints = points.map((p, i) => {
+    const x = pad + i * xStep;
+    const y = h - pad - ((p.idx - minIdx) / range) * (h - pad * 2);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ');
+  const dots = points.map((p, i) => {
+    const x = pad + i * xStep;
+    const y = h - pad - ((p.idx - minIdx) / range) * (h - pad * 2);
+    return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3" fill="var(--accent)"/>`;
+  }).join('');
+  container.innerHTML = `
+    <svg viewBox="0 0 ${w} ${h}" style="width:100%;height:auto;display:block">
+      <text x="${pad - 4}" y="${pad - 4}" text-anchor="end" font-size="10" fill="currentColor" opacity="0.6">${maxIdx.toFixed(1)}</text>
+      <text x="${pad - 4}" y="${h - pad + 12}" text-anchor="end" font-size="10" fill="currentColor" opacity="0.6">${minIdx.toFixed(1)}</text>
+      <polyline points="${polyPoints}" fill="none" stroke="var(--accent)" stroke-width="2"/>
+      ${dots}
+    </svg>
+    <div class="small-text" style="display:flex;justify-content:space-between;color:var(--text-muted);font-size:11px;margin-top:2px">
+      <span>after round ${points[0].n}</span>
+      <span>after round ${points[points.length - 1].n}</span>
+    </div>
+  `;
+}
+
+async function loadRounds() {
+  const recent = await getRecent();
+  const emptyCard = $('rounds-empty-card');
+  const listCard = $('rounds-list-card');
+
+  if (recent.length === 0) {
+    emptyCard.style.display = 'block';
+    listCard.style.display = 'none';
+    return;
+  }
+
+  emptyCard.style.display = 'none';
+  listCard.style.display = 'block';
+  const list = $('rounds-list');
+  list.innerHTML = '';
+
+  recent.forEach(r => {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;justify-content:space-between;align-items:center;gap:8px;padding:12px 0;border-bottom:1px solid var(--border)';
+    const date = new Date(r.updatedAt).toLocaleDateString();
+    const playersStr = r.players ? ` · ${r.players}` : '';
+    row.innerHTML = `
+      <div style="flex:1;min-width:0;cursor:pointer" class="recent-row-tap">
+        <div style="font-weight:500;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.course}</div>
+        <div style="font-size:12px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.code} · ${date}${playersStr}</div>
+      </div>
+      <button class="small recent-open-btn">Open</button>
+      <button class="small recent-delete-btn" title="Delete" style="background:transparent;color:var(--danger);border-color:var(--danger);padding:4px 10px">×</button>
+    `;
+    row.querySelector('.recent-row-tap').onclick = () => openRecent(r);
+    row.querySelector('.recent-open-btn').onclick = () => openRecent(r);
+    row.querySelector('.recent-delete-btn').onclick = async (e) => {
+      e.stopPropagation();
+      if (!confirm(`Delete the round at ${r.course} (${r.code})? This permanently removes it from your device.`)) return;
+      await deleteRecentGame(r.code);
+      await loadRounds();
+    };
+    list.appendChild(row);
+  });
+  if (list.lastChild) list.lastChild.style.borderBottom = 'none';
+
+  $('btn-clear-all-rounds').onclick = async () => {
+    if (!confirm(`Clear all ${recent.length} saved rounds? This permanently removes them from your device.`)) return;
+    for (const r of recent) await deleteRecentGame(r.code);
+    await loadRounds();
+  };
+}
+
+// Helper: open a recent game. If the round was finished (has finishedAt),
+// open it in view-only mode and land on Board (not Score).
+async function openRecent(r) {
+  const g = await loadGame(r.code);
+  if (g) {
+    state.game = g;
+    state.viewOnlyMode = !!g.finishedAt;
+    await safeSet(KEY_LAST, r.code, false);
+    enableGameTabs(true);
+    if (state.viewOnlyMode) {
+      switchTab('board');
+      showToast('Viewing finished round (read-only)');
+    } else {
+      switchTab('score');
+    }
+  } else {
+    showToast('Round not found — it may have been deleted');
+  }
+}
+
+// Helper: remove a game from recent list AND from storage
+async function deleteRecentGame(code) {
+  // Remove from recent list (now shared across devices)
+  let recent = [];
+  const v = await safeGet(KEY_RECENT, true);
+  if (v) try { recent = JSON.parse(v); } catch (e) {}
+  recent = recent.filter(g => g.code !== code);
+  await safeSet(KEY_RECENT, JSON.stringify(recent), true);
+
+  // Remove the underlying game data — both Supabase and local cache
+  try {
+    if (!supaReady) await initSupabase();
+    if (supa && supaOnline) {
+      await supa.from('games').delete().eq('code', code);
+    }
+  } catch (e) {
+    console.warn('Supabase game delete failed:', e);
+  }
+  try { localStorage.removeItem('game:' + code); } catch (e) {}
+
+  // If we just deleted the "last opened" pointer, clear it
+  const last = await safeGet(KEY_LAST, false);
+  if (last === code) await safeSet(KEY_LAST, '', false);
+}
+
+// ============================================================
+// TOURNAMENTS
+// ============================================================
+function renderTourneyCard(t, compact) {
+  const card = document.createElement('div');
+  card.className = 'tourney-card';
+  const dateStr = t.date ? new Date(t.date + 'T00:00:00').toLocaleDateString(undefined, {weekday:'short', month:'short', day:'numeric'}) : 'No date';
+  const players = t.players ? t.players.split(',').map(s => s.trim()).filter(Boolean) : [];
+  card.innerHTML = `
+    <div class="t-name">${t.name}</div>
+    <div class="t-meta">
+      <span>📅 ${dateStr}${t.time ? ' · ' + t.time : ''}</span>
+      ${t.course ? `<span>⛳ ${t.course}</span>` : ''}
+      ${players.length ? `<span>👥 ${players.length}</span>` : ''}
+    </div>
+    <span class="t-status ${t.status || 'scheduled'}">${t.status || 'scheduled'}</span>
+  `;
+  card.onclick = () => openTourneyActions(t);
+  return card;
+}
+
+async function renderTourneyList() {
+  const list = $('tourney-list');
+  const tourneys = await getTourneys();
+  if (tourneys.length === 0) {
+    list.innerHTML = '<div class="empty"><p>No tournaments scheduled</p></div>';
+    return;
+  }
+  tourneys.sort((a, b) => (a.date || '9999').localeCompare(b.date || '9999'));
+  list.innerHTML = '';
+  tourneys.forEach(t => list.appendChild(renderTourneyCard(t)));
+}
+
+function openTourneyActions(t) {
+  state.activeTourneyForActions = t;
+  $('tam-name').textContent = t.name;
+  const dateStr = t.date ? new Date(t.date + 'T00:00:00').toLocaleDateString(undefined, {weekday:'long', month:'long', day:'numeric'}) : 'No date';
+  const playerCount = t.players ? t.players.split(',').filter(Boolean).length : 0;
+  const hasFullConfig = !!t.savedConfig;
+  let metaHtml = `📅 ${dateStr}${t.time ? ' · ' + t.time : ''}`;
+  if (t.course) metaHtml += `<br>⛳ ${t.course}`;
+  if (playerCount > 0) metaHtml += `<br>👥 ${playerCount} player${playerCount > 1 ? 's' : ''}`;
+  metaHtml += `<br><span style="color:${hasFullConfig ? 'var(--accent)' : 'var(--text-muted)'}">${hasFullConfig ? '✓ Full setup saved' : 'Basic info only — setup form will start blank'}</span>`;
+  if (t.status === 'live' && t.activeCode) {
+    metaHtml += `<br><span style="color:var(--info)">⚡ Round in progress — code <strong>${t.activeCode}</strong></span>`;
+  }
+  if (t.status === 'complete') {
+    metaHtml += `<br><span style="color:var(--text-muted)">✓ Completed</span>`;
+  }
+  $('tam-meta').innerHTML = metaHtml;
+  // Hide "Start round now" if already complete
+  $('tam-start').style.display = (t.status === 'complete') ? 'none' : '';
+  $('tourney-actions-modal').classList.add('show');
+}
+
+function openTourneyModal(existing) {
+  $('tourney-modal-title').textContent = existing ? 'Edit tournament' : 'New tournament';
+  $('tm-name').value = existing ? existing.name : '';
+  $('tm-date').value = existing ? existing.date || '' : '';
+  $('tm-time').value = existing ? existing.time || '' : '';
+  $('tm-course').value = existing ? existing.course || '' : '';
+  $('tm-players').value = existing ? existing.players || '' : '';
+  $('tm-notes').value = existing ? existing.notes || '' : '';
+  state.editingTourneyId = existing ? existing.id : null;
+  $('tourney-modal').classList.add('show');
+}
+
+async function saveTourney() {
+  const name = $('tm-name').value.trim();
+  if (!name) { showToast('Name required'); return; }
+  const t = {
+    id: state.editingTourneyId || ('tn-' + Date.now() + '-' + Math.random().toString(36).slice(2,6)),
+    name,
+    date: $('tm-date').value,
+    time: $('tm-time').value,
+    course: $('tm-course').value.trim(),
+    players: $('tm-players').value.trim(),
+    notes: $('tm-notes').value.trim(),
+    status: 'scheduled',
+    createdAt: state.editingTourneyId ? undefined : Date.now()
+  };
+  let list = await getTourneys();
+  const idx = list.findIndex(x => x.id === t.id);
+  if (idx >= 0) {
+    t.createdAt = list[idx].createdAt;
+    t.status = list[idx].status;
+    list[idx] = t;
+  } else {
+    list.push(t);
+  }
+  await saveTourneys(list);
+  $('tourney-modal').classList.remove('show');
+  state.editingTourneyId = null;
+  renderTourneyList();
+  renderHome();
+  showToast(idx >= 0 ? 'Tournament updated' : 'Tournament saved');
+}
+
+async function deleteTourney(id) {
+  let list = await getTourneys();
+  list = list.filter(t => t.id !== id);
+  await saveTourneys(list);
+  renderTourneyList();
+  renderHome();
+  showToast('Deleted');
+}
+
+// ============================================================
+// NAVIGATION
+// ============================================================
+window.switchTab = function(name) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+  document.querySelectorAll('.panel').forEach(p => p.classList.toggle('active', p.id === 'panel-' + name));
+  if (name === 'score') renderScoreEntry();
+  if (name === 'board') renderBoard();
+  if (name === 'tourneys') renderTourneyList();
+  if (name === 'rounds') loadRounds();
+  if (name === 'home') renderHome();
+  if (name === 'stats') renderStats();
+  // Setup tab: if a round is currently in progress, enter edit-live-round mode
+  // so the user can tweak rules mid-play. Otherwise leave the setup screen as-is.
+  if (name === 'setup') {
+    const scoreTabEl = $('tab-score');
+    const roundLive = state.game && state.game.code && (!scoreTabEl || scoreTabEl.getAttribute('aria-disabled') !== 'true');
+    if (roundLive && !state.editingLiveRound && !state.viewOnlyMode) {
+      enterEditLiveRoundMode();
+    }
+  }
+  if (typeof updateActiveRoundBar === 'function') updateActiveRoundBar();
+};
+
+// Enter edit-live-round mode: pre-fill the setup form with the active round's
+// settings, swap "Start round" for "Save changes", and show the edit banner.
+// User can tweak any game setting; saving applies the new config retroactively
+// to the running round.
+function enterEditLiveRoundMode() {
+  const g = state.game;
+  if (!g) return;
+  state.editingLiveRound = true;
+
+  // Hide the no-game pickers, show the with-game form
+  $('setup-no-game').style.display = 'none';
+  $('setup-with-game').style.display = 'block';
+
+  // Pre-fill the form using the existing applySavedConfig path. We pass two
+  // shapes intentionally:
+  //   - setupNewGameForm needs name+hcp (it builds the player rows fresh)
+  //   - applySavedConfig needs name+id+hcp so participant lookups by ID work
+  //     for restoring the per-game participant sets.
+  setupNewGameForm({
+    course: g.course,
+    pars: g.pars,
+    sis: g.sis,
+    tees: g.tees,
+    players: g.players.map(p => ({ name: p.name, hcp: p.rawHcp != null ? p.rawHcp : p.hcp, teeLabel: p.teeLabel })),
+    games: g.games,
+    hcpRules: g.hcpRules
+  });
+  applySavedConfig({
+    course: g.course,
+    pars: g.pars,
+    sis: g.sis,
+    tees: g.tees,
+    players: g.players.map(p => ({ id: p.id, name: p.name, hcp: p.rawHcp != null ? p.rawHcp : p.hcp, teeLabel: p.teeLabel })),
+    games: g.games,
+    hcpRules: g.hcpRules
+  });
+
+  // Display the active code
+  $('display-code').textContent = g.code;
+  $('display-code').dataset.code = g.code;
+
+  // Swap the action buttons: hide Start round + Save as tournament; show Save changes
+  $('btn-start-round').style.display = 'none';
+  $('btn-save-tourney').style.display = 'none';
+  $('btn-save-edits').style.display = '';
+  $('edit-live-banner').style.display = 'block';
+  $('btn-cancel-setup').textContent = 'Cancel edits';
+}
+
+// Exit edit-live-round mode without saving
+function exitEditLiveRoundMode() {
+  state.editingLiveRound = false;
+  $('btn-start-round').style.display = '';
+  $('btn-save-tourney').style.display = '';
+  $('btn-save-edits').style.display = 'none';
+  $('edit-live-banner').style.display = 'none';
+  $('btn-cancel-setup').textContent = 'Cancel';
+}
+
+function enableGameTabs(yes) {
+  // For multi-page nav: tabs are <a> links — use aria-disabled + pointer-events
+  const scoreTab = $('tab-score');
+  const boardTab = $('tab-board');
+  if (scoreTab) {
+    scoreTab.setAttribute('aria-disabled', yes ? 'false' : 'true');
+    scoreTab.style.pointerEvents = yes ? '' : 'none';
+    scoreTab.style.opacity = yes ? '' : '0.4';
+  }
+  if (boardTab) {
+    boardTab.setAttribute('aria-disabled', yes ? 'false' : 'true');
+    boardTab.style.pointerEvents = yes ? '' : 'none';
+    boardTab.style.opacity = yes ? '' : '0.4';
+  }
+  if (typeof updateActiveRoundBar === 'function') updateActiveRoundBar();
+  // Wire realtime subscription so other phones' edits push in live
+  if (yes && state.game && state.game.code) {
+    if (typeof subscribeToGame === 'function') subscribeToGame(state.game.code);
+  } else {
+    if (typeof unsubscribeFromGame === 'function') unsubscribeFromGame();
+  }
+}
+
+// ============================================================
+// INIT
+// ============================================================
+async function init() {
+  // Initialize Supabase backend (loads CDN script, creates client)
+  await initSupabase();
+  updateSyncIndicator();
+
+  // Tabs
+  document.querySelectorAll('.tab').forEach(t => {
+    // Tabs are <a> links — block navigation if aria-disabled
+    t.onclick = (e) => {
+      if (t.getAttribute('aria-disabled') === 'true') e.preventDefault();
+    };
+  });
+
+  // Quick actions on home
+  $('btn-quick-new').onclick = () => {
+    switchTab('setup');
+    $('btn-new-game').click();
+  };
+  $('btn-quick-join').onclick = () => switchTab('setup');
+
+  // New game button
+  $('btn-new-game').onclick = () => {
+    // Defensive: if we were in live-round-edit mode, exit it before showing
+    // the fresh setup form — otherwise the user sees "Save changes" instead
+    // of "Start round" and the form is pre-filled with the live round's data.
+    if (state.editingLiveRound) {
+      exitEditLiveRoundMode();
+    }
+    $('setup-no-game').style.display = 'none';
+    $('setup-with-game').style.display = 'block';
+    setupNewGameForm();
+    const code = generateCode();
+    $('display-code').textContent = code;
+    $('display-code').dataset.code = code;
+  };
+
+  $('btn-cancel-setup').onclick = () => {
+    if (state.editingLiveRound) {
+      exitEditLiveRoundMode();
+      switchTab('score');
+      return;
+    }
+    $('setup-with-game').style.display = 'none';
+    $('setup-no-game').style.display = 'block';
+    state.editingTourneyId = null;
+    state.pendingTourneySetup = null;
+  };
+
+  $('btn-add-player').onclick = () => addPlayerRow();
+  $('btn-pick-roster').onclick = () => openRosterPicker();
+
+  $('btn-add-tee').onclick = () => {
+    addTeeRow('', null, null);
+    renderPlayerTeeSelects();
+  };
+
+  // Stats tab: player select dropdown + "Set as me" button
+  $('stats-player-select').onchange = () => renderStatsForSelectedPlayer();
+  $('btn-set-me').onclick = async () => {
+    const name = $('stats-player-select').value;
+    if (!name) return;
+    await setMeName(name);
+    showToast(`${name} set as 'me'`);
+    await renderStats();
+  };
+
+  // Live slider label
+  $('hcp-pct').oninput = (e) => {
+    $('hcp-pct-label').textContent = e.target.value + '%';
+  };
+
+  // Roster modal wiring
+  $('roster-cancel').onclick = () => $('roster-modal').classList.remove('show');
+  $('roster-modal').onclick = (e) => {
+    if (e.target.id === 'roster-modal') $('roster-modal').classList.remove('show');
+  };
+  $('roster-search').oninput = () => renderRosterList();
+
+  // Par presets
+  document.querySelectorAll('[data-preset]').forEach(btn => {
+    btn.onclick = () => {
+      const preset = btn.dataset.preset;
+      const pars = preset === 'par70' ? PAR70 : preset === 'par71' ? PAR71 : STANDARD_PARS;
+      $('par-grid').querySelectorAll('input').forEach((inp, i) => inp.value = pars[i]);
+    };
+  });
+  $('btn-default-si').onclick = () => {
+    $('si-grid').querySelectorAll('input').forEach((inp, i) => inp.value = DEFAULT_SI[i]);
+  };
+
+  // Game toggles
+  ['skins','nassau','stroke','banker','vegas','dvegas','sixes','wolf','match','team-match','team-lowball','p3greenie','junk'].forEach(g => {
+    $('game-' + g).onchange = (e) => {
+      $('opts-' + g).classList.toggle('show', e.target.checked);
+      // Refresh team picker when a team game is enabled
+      if ((g === 'team-match' || g === 'team-lowball') && e.target.checked) {
+        renderTeamPickers();
+      }
+      // Refresh multi-instance UIs for Match Play and Nassau when toggled on
+      if (g === 'match' && e.target.checked) renderMatchInstances();
+      if (g === 'nassau' && e.target.checked) renderNassauInstances();
+      // Refresh participant pickers (the picker only renders for enabled games)
+      renderParticipantPickers();
+    };
+  });
+
+  // "+ Add another match/nassau" buttons
+  $('btn-add-match-instance').onclick = () => {
+    if (!Array.isArray(state.matchInstances)) state.matchInstances = [];
+    state.matchInstances.push({ value: 5, net: true, pair: [] });
+    renderMatchInstances();
+  };
+  $('btn-add-nassau-instance').onclick = () => {
+    if (!Array.isArray(state.nassauInstances)) state.nassauInstances = [];
+    state.nassauInstances.push({
+      value: 5, format: 'stroke', allowHuckle: true,
+      birdiePay: 10, eaglePay: 20, hioPay: 100, pair: []
+    });
+    renderNassauInstances();
+  };
+
+  // Start round
+  $('btn-start-round').onclick = async () => {
+    const setup = gatherSetup();
+    if (!setup) return;
+    const code = $('display-code').dataset.code || generateCode();
+    const courseId = $('course-name').dataset.courseId || '';
+    const game = {
+      code,
+      course: setup.course,
+      courseId: courseId,
+      pars: setup.pars,
+      sis: setup.sis,
+      tees: Array.isArray(setup.tees) ? setup.tees : [],
+      players: setup.players,
+      games: setup.games,
+      hcpRules: setup.hcpRules,
+      scores: {},
+      bankerData: { holes: {}, picks: {} },
+      wolfData: { holes: {} },
+      junkData: {},
+      tourneyId: state.editingTourneyId || null,
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    };
+    setup.players.forEach(p => game.scores[p.id] = new Array(18).fill(null));
+
+    // If banker is enabled with random order, shuffle PARTICIPANT IDs into bankerOrder
+    // (not all players — only those participating in banker rotate as banker).
+    if (setup.games.banker) {
+      const partIds = Array.isArray(setup.games.banker.participants)
+        ? setup.games.banker.participants.slice()
+        : setup.players.map(p => p.id);
+      if (setup.games.banker.order === 'random') {
+        for (let i = partIds.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [partIds[i], partIds[j]] = [partIds[j], partIds[i]];
+        }
+      }
+      game.bankerData.bankerOrder = partIds;
+    }
+
+    state.game = game;
+    state.currentHole = 1;
+    const ok = await saveGame(game);
+    if (!ok) { showToast('Save failed'); return; }
+
+    // Persist course scorecard so next round at this course auto-fills
+    if (courseId) {
+      await persistCourseScorecard(courseId, setup.course, setup.pars, setup.sis, setup.tees);
+    }
+
+    // Save players to roster so they can be picked again next time
+    for (const p of setup.players) {
+      await upsertPlayerInRoster(p.name, p.rawHcp != null ? p.rawHcp : p.hcp);
+    }
+
+    // Mark tourney as live
+    if (state.editingTourneyId) {
+      let list = await getTourneys();
+      const idx = list.findIndex(x => x.id === state.editingTourneyId);
+      if (idx >= 0) {
+        list[idx].status = 'live';
+        list[idx].activeCode = code;
+        await saveTourneys(list);
+      }
+      state.editingTourneyId = null;
+    }
+
+    enableGameTabs(true);
+    $('setup-with-game').style.display = 'none';
+    $('setup-no-game').style.display = 'block';
+    switchTab('score');
+    showToast('Round started — code ' + code);
+  };
+
+  // Save edits to the active round — applies new game config retroactively.
+  // Pars/SIs/handicap rules are also editable; player roster stays as-is to
+  // avoid breaking score history.
+  $('btn-save-edits').onclick = async () => {
+    const g = state.game;
+    if (!g) {
+      showToast('No active round to edit');
+      return;
+    }
+    const setup = gatherSetup();
+    if (!setup) return; // gatherSetup shows its own toast on validation errors
+
+    // Merge new config into the running round. Keep players (and their scores)
+    // intact — we don't touch the player roster mid-round to avoid orphaning
+    // scores. Apply the (possibly updated) raw handicap to existing player
+    // objects so handicap-rule changes still take effect.
+    g.course = setup.course;
+    g.pars = setup.pars;
+    g.sis = setup.sis;
+    g.tees = Array.isArray(setup.tees) ? setup.tees : [];
+    g.games = setup.games;
+    g.hcpRules = setup.hcpRules;
+
+    // Update raw handicaps + teeLabel for existing players (matched by name) without
+    // disturbing the score arrays. New players added in the form are ignored
+    // mid-round; removed players are also ignored — both would corrupt scoring.
+    setup.players.forEach(np => {
+      const existing = g.players.find(p => p.name === np.name);
+      if (existing) {
+        existing.rawHcp = np.rawHcp != null ? np.rawHcp : np.hcp;
+        existing.hcp = np.hcp;
+        if (np.teeLabel != null) existing.teeLabel = np.teeLabel;
+      }
+    });
+
+    // Clean up game-specific data when a game gets removed mid-round so stale
+    // entries don't show up in calc results.
+    if (!g.games.banker && g.bankerData) g.bankerData = { holes: {}, picks: {} };
+    if (!g.games.wolf && g.wolfData) g.wolfData = { picks: {} };
+    if (!g.games.nassau && g.huckleData) g.huckleData = { huckles: [] };
+    if (!g.games.p3greenie && g.p3greenieData) g.p3greenieData = {};
+
+    await saveGame(g);
+    exitEditLiveRoundMode();
+    switchTab('score');
+    showToast('Round settings updated');
+  };
+
+  // Save the current setup as a tournament for later
+  $('btn-save-tourney').onclick = () => {
+    const setup = gatherSetup();
+    if (!setup) return; // gatherSetup shows its own toast on validation errors
+    // Stash the gathered setup so the modal save handler can use it
+    state.pendingTourneySetup = setup;
+    // If editing an existing tourney, prefill the name/date from the existing record
+    const editing = state.editingTourneyId
+      ? null  // we'll look it up async below
+      : null;
+    $('stm-name').value = '';
+    $('stm-date').value = '';
+    $('stm-time').value = '';
+    $('stm-notes').value = '';
+    if (state.editingTourneyId) {
+      // Look up the existing tournament to prefill name/date
+      getTourneys().then(list => {
+        const t = list.find(x => x.id === state.editingTourneyId);
+        if (t) {
+          $('stm-name').value = t.name || '';
+          $('stm-date').value = t.date || '';
+          $('stm-time').value = t.time || '';
+          $('stm-notes').value = t.notes || '';
+        }
+      });
+    }
+    $('save-tourney-modal').classList.add('show');
+  };
+
+  $('stm-cancel').onclick = () => {
+    $('save-tourney-modal').classList.remove('show');
+    state.pendingTourneySetup = null;
+  };
+
+  $('save-tourney-modal').onclick = (e) => {
+    if (e.target.id === 'save-tourney-modal') $('save-tourney-modal').classList.remove('show');
+  };
+
+  $('stm-save').onclick = async () => {
+    const name = $('stm-name').value.trim();
+    if (!name) { showToast('Tournament name required'); return; }
+    const setup = state.pendingTourneySetup;
+    if (!setup) { showToast('Setup data missing — try again'); return; }
+
+    // Strip ephemeral player IDs and rawHcp computed during gatherSetup; keep raw
+    // hcp so handicap percentages don't double-apply when reloaded.
+    const cleanPlayers = setup.players.map(p => ({
+      name: p.name,
+      hcp: p.rawHcp != null ? p.rawHcp : p.hcp,
+      teeLabel: p.teeLabel || null
+    }));
+
+    // Convert per-game participant ID arrays to NAME arrays for stable storage
+    // (player IDs are regenerated every round, names are stable). Walks both
+    // top-level participants AND per-instance participants for multi-instance games.
+    const cleanGames = JSON.parse(JSON.stringify(setup.games || {}));
+    const idToName = (pid) => {
+      const p = setup.players.find(pl => pl.id === pid);
+      return p ? p.name : null;
+    };
+    Object.keys(cleanGames).forEach(gKey => {
+      const cfg = cleanGames[gKey];
+      if (cfg && Array.isArray(cfg.participants)) {
+        cfg.participantNames = cfg.participants.map(idToName).filter(Boolean);
+        delete cfg.participants;
+      }
+      // Walk instances arrays (Match Play, Nassau)
+      if (cfg && Array.isArray(cfg.instances)) {
+        cfg.instances.forEach(inst => {
+          if (Array.isArray(inst.participants)) {
+            inst.participantNames = inst.participants.map(idToName).filter(Boolean);
+            delete inst.participants;
+          }
+        });
+      }
+    });
+
+    const savedConfig = {
+      course: setup.course,
+      pars: setup.pars,
+      sis: setup.sis,
+      tees: Array.isArray(setup.tees) ? setup.tees : [],
+      players: cleanPlayers,
+      games: cleanGames,
+      hcpRules: setup.hcpRules
+    };
+
+    let list = await getTourneys();
+    const existingId = state.editingTourneyId;
+    if (existingId) {
+      // Update existing
+      const idx = list.findIndex(x => x.id === existingId);
+      if (idx >= 0) {
+        list[idx].name = name;
+        list[idx].date = $('stm-date').value;
+        list[idx].time = $('stm-time').value;
+        list[idx].notes = $('stm-notes').value.trim();
+        list[idx].course = setup.course;
+        list[idx].players = cleanPlayers.map(p => p.name).join(', ');
+        list[idx].savedConfig = savedConfig;
+        list[idx].status = list[idx].status === 'live' ? 'live' : 'scheduled';
+      }
+    } else {
+      // Create new
+      list.push({
+        id: 'tn-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+        name,
+        date: $('stm-date').value,
+        time: $('stm-time').value,
+        course: setup.course,
+        players: cleanPlayers.map(p => p.name).join(', '),
+        notes: $('stm-notes').value.trim(),
+        savedConfig,
+        status: 'scheduled',
+        createdAt: Date.now()
+      });
+    }
+    await saveTourneys(list);
+
+    state.pendingTourneySetup = null;
+    state.editingTourneyId = null;
+    $('save-tourney-modal').classList.remove('show');
+    $('setup-with-game').style.display = 'none';
+    $('setup-no-game').style.display = 'block';
+    switchTab('tourneys');
+    showToast('Tournament saved');
+  };
+
+  // Join existing
+  $('btn-join-game').onclick = async () => {
+    const code = $('join-code').value.trim().toUpperCase();
+    if (!code) { showToast('Enter a code'); return; }
+    const g = await loadGame(code);
+    if (!g) { showToast('No round found'); return; }
+    state.game = g;
+    state.currentHole = 1;
+    await safeSet(KEY_LAST, code, false);
+    enableGameTabs(true);
+    switchTab('score');
+    showToast('Joined ' + code);
+  };
+
+  // Hole nav
+  $('prev-hole').onclick = () => {
+    if (state.currentHole > 1) { state.currentHole--; renderScoreEntry(); }
+  };
+  $('next-hole').onclick = () => {
+    if (state.currentHole < 18) { state.currentHole++; renderScoreEntry(); }
+  };
+
+  // Auto-advance button
+  $('auto-advance-btn').onclick = () => {
+    if (state.currentHole < 18) {
+      state.currentHole++;
+      renderScoreEntry();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
+
+  $('btn-refresh').onclick = async () => {
+    if (!state.game) return;
+    const fresh = await loadGame(state.game.code);
+    if (fresh) {
+      state.game = fresh;
+      renderScoreEntry();
+      showToast('Refreshed');
+    }
+  };
+
+  $('btn-end-round').onclick = () => switchTab('board');
+  $('btn-back-score').onclick = () => switchTab('score');
+
+  $('btn-end-early').onclick = () => {
+    const g = state.game;
+    if (!g) return;
+    // On hole 18 with all scored, this button becomes a Finish round shortcut —
+    // route to the same flow as the Board's Finish button.
+    if ($('btn-end-early').dataset.mode === 'finish') {
+      $('btn-finish-round').click();
+      return;
+    }
+    // Find the highest hole that has any scores entered
+    let lastHole = 0;
+    g.players.forEach(p => {
+      const arr = g.scores[p.id] || [];
+      arr.forEach((s, i) => { if (s != null && i + 1 > lastHole) lastHole = i + 1; });
+    });
+    const msg = lastHole === 0
+      ? 'End the round now? No scores have been entered yet.'
+      : `End the round after hole ${lastHole}? You'll see the current leaderboard and settle-up totals based on holes scored so far. Unscored holes won't count.`;
+    if (!confirm(msg)) return;
+    switchTab('board');
+  };
+
+  $('btn-finish-round').onclick = async () => {
+    const g = state.game;
+    if (!g) {
+      showToast('No active round to finish');
+      return;
+    }
+    // Open the summary modal — actual archive happens on "Save & return home"
+    const dateStr = new Date(g.updatedAt || Date.now()).toLocaleDateString();
+    let holesCompleted = 0;
+    for (let h = 0; h < 18; h++) {
+      if (g.players.some(p => g.scores[p.id] && g.scores[p.id][h] != null)) holesCompleted++;
+    }
+    $('summary-subtitle').innerHTML = `<strong>${g.course}</strong> · ${dateStr} · ${holesCompleted}/18 holes · Code <strong style="color:var(--accent)">${g.code}</strong>`;
+    // Build summary defensively — if any calc throws, fall back to a basic message
+    // so the user can still tap Save & return home and not get stuck.
+    try {
+      $('summary-content').innerHTML = buildRoundSummary(g);
+    } catch (err) {
+      console.error('buildRoundSummary failed:', err);
+      $('summary-content').innerHTML = `<div class="help-text" style="padding:20px;text-align:center">
+        <strong style="color:var(--warn)">Couldn't build the full summary.</strong><br>
+        ${holesCompleted} of 18 holes scored.<br>
+        You can still save the round below — full data is preserved.
+      </div>`;
+    }
+    $('summary-modal').classList.add('show');
+  };
+
+  // Reopen a finished round — clears finishedAt and exits view-only mode so
+  // the user can edit scores/settings (e.g., to fix a typo or add a forgotten junk).
+  $('btn-reopen-round').onclick = async () => {
+    const g = state.game;
+    if (!g || !state.viewOnlyMode) return;
+    if (!confirm('This will reactivate the round so you can make edits. Are you sure?')) return;
+    delete g.finishedAt;
+    state.viewOnlyMode = false;
+    try { await saveGame(g); } catch (e) { console.warn('saveGame on reopen failed:', e); }
+    renderBoard();
+    showToast('Round reactivated — you can edit scores and settings');
+  };
+
+  // Summary modal: "Back to board" — just close
+  $('summary-back').onclick = () => {
+    $('summary-modal').classList.remove('show');
+  };
+
+  // Summary modal: "Save & return home" — archive the round and go home
+  $('summary-confirm').onclick = async () => {
+    const g = state.game;
+    if (g) {
+      // Mark the round as finished — this is the durable signal for view-only mode
+      // when reopened later from the Rounds tab.
+      g.finishedAt = Date.now();
+      try { await saveGame(g); } catch (e) { console.warn('saveGame on finish failed:', e); }
+      // Make sure the round is in the recent list (addToRecent normally runs on every
+      // saveGame, but if the user joined and finished without editing, it might not have)
+      try { await addToRecent(g); } catch (e) { console.warn('addToRecent failed:', e); }
+      // Archive each player's score into the personal roster history (used for
+      // GHIN-style handicap auto-calc on next round). Quietly skips if rating/slope
+      // missing or any player's 18 holes incomplete.
+      try { await archiveScoresFromRound(g); } catch (e) { console.warn('archiveScoresFromRound failed:', e); }
+      // Mark tourney complete if linked
+      if (g.tourneyId) {
+        try {
+          let list = await getTourneys();
+          const idx = list.findIndex(x => x.id === g.tourneyId);
+          if (idx >= 0) {
+            list[idx].status = 'complete';
+            await saveTourneys(list);
+          }
+        } catch (e) { console.warn('tourney update failed:', e); }
+      }
+    }
+    state.game = null;
+    state.editingLiveRound = false;
+    state.viewOnlyMode = false;
+    enableGameTabs(false);
+    await safeSet(KEY_LAST, '', false);
+    $('summary-modal').classList.remove('show');
+    switchTab('home');
+    showToast('Round saved');
+  };
+
+  // Tap outside the summary modal to close (treats as "back to board")
+  $('summary-modal').onclick = (e) => {
+    if (e.target.id === 'summary-modal') $('summary-modal').classList.remove('show');
+  };
+
+  // Tournament modal
+  // "+ New tournament" now goes straight to the setup form (in tournament mode)
+  // so users build the full config there. The lightweight modal still exists
+  // for editing basic details.
+  $('btn-new-tourney').onclick = () => {
+    state.editingTourneyId = null;
+    state.pendingTourneySetup = null;
+    $('setup-no-game').style.display = 'none';
+    $('setup-with-game').style.display = 'block';
+    setupNewGameForm();
+    const code = generateCode();
+    $('display-code').textContent = code;
+    $('display-code').dataset.code = code;
+    switchTab('setup');
+    showToast('Set everything up, then tap "Save as tournament"');
+  };
+  $('tm-cancel').onclick = () => {
+    $('tourney-modal').classList.remove('show');
+    state.editingTourneyId = null;
+  };
+  $('tm-save').onclick = saveTourney;
+  $('tourney-modal').onclick = (e) => {
+    if (e.target.id === 'tourney-modal') {
+      $('tourney-modal').classList.remove('show');
+      state.editingTourneyId = null;
+    }
+  };
+
+  // Tournament action sheet handlers
+  $('tam-cancel').onclick = () => {
+    $('tourney-actions-modal').classList.remove('show');
+    state.activeTourneyForActions = null;
+  };
+  $('tourney-actions-modal').onclick = (e) => {
+    if (e.target.id === 'tourney-actions-modal') {
+      $('tourney-actions-modal').classList.remove('show');
+      state.activeTourneyForActions = null;
+    }
+  };
+  $('tam-start').onclick = async () => {
+    const t = state.activeTourneyForActions;
+    if (!t) return;
+    $('tourney-actions-modal').classList.remove('show');
+
+    // If a round is already live for this tourney, offer to rejoin it
+    if (t.status === 'live' && t.activeCode) {
+      const g = await loadGame(t.activeCode);
+      if (g) {
+        state.game = g;
+        state.currentHole = 1;
+        await safeSet(KEY_LAST, t.activeCode, false);
+        enableGameTabs(true);
+        switchTab('score');
+        showToast('Rejoined ' + t.activeCode);
+        return;
+      }
+    }
+
+    // Otherwise, open the setup form pre-filled from the saved config (if any)
+    $('setup-no-game').style.display = 'none';
+    $('setup-with-game').style.display = 'block';
+    const code = generateCode();
+    $('display-code').textContent = code;
+    $('display-code').dataset.code = code;
+
+    const dateStr = t.date ? new Date(t.date + 'T00:00:00').toLocaleDateString(undefined, {weekday:'long', month:'long', day:'numeric'}) : '';
+    // Build prefill: prefer the saved full config if present, else fall back
+    // to whatever basic fields the tourney has.
+    let prefill;
+    if (t.savedConfig) {
+      prefill = Object.assign({}, t.savedConfig, {
+        tourneyId: t.id,
+        tourneyName: t.name,
+        tourneyDate: dateStr
+      });
+    } else {
+      const players = t.players ? t.players.split(',').map(s => s.trim()).filter(Boolean).map(n => ({ name: n, hcp: 0 })) : null;
+      prefill = { course: t.course, players, tourneyId: t.id, tourneyName: t.name, tourneyDate: dateStr };
+    }
+
+    setupNewGameForm(prefill);
+    // applySavedConfig must run AFTER setupNewGameForm (which builds the players list, etc.)
+    if (t.savedConfig) {
+      applySavedConfig(t.savedConfig);
+    }
+    state.editingTourneyId = t.id;
+    switchTab('setup');
+    showToast(t.savedConfig ? 'Loaded — review and tap Start round' : 'Fill in the setup, then start');
+  };
+  $('tam-edit').onclick = () => {
+    const t = state.activeTourneyForActions;
+    if (!t) return;
+    $('tourney-actions-modal').classList.remove('show');
+    openTourneyModal(t);
+  };
+  $('tam-delete').onclick = async () => {
+    const t = state.activeTourneyForActions;
+    if (!t) return;
+    if (!confirm(`Delete "${t.name}"? This won't delete any in-progress round.`)) return;
+    await deleteTourney(t.id);
+    $('tourney-actions-modal').classList.remove('show');
+    state.activeTourneyForActions = null;
+    renderTourneyList();
+  };
+
+  // Wolf modal
+  $('wolf-cancel').onclick = () => $('wolf-modal').classList.remove('show');
+  $('wolf-modal').onclick = (e) => {
+    if (e.target.id === 'wolf-modal') $('wolf-modal').classList.remove('show');
+  };
+
+  // Huckle modal
+  $('huckle-cancel').onclick = () => $('huckle-modal').classList.remove('show');
+  $('huckle-modal').onclick = (e) => {
+    if (e.target.id === 'huckle-modal') $('huckle-modal').classList.remove('show');
+  };
+
+  // Auto-refresh every 8s
+  setInterval(async () => {
+    if (!state.game) return;
+    const activePanel = document.querySelector('.panel.active').id;
+    if (activePanel === 'panel-score' || activePanel === 'panel-board') {
+      const fresh = await loadGame(state.game.code);
+      if (fresh && fresh.updatedAt > state.game.updatedAt) {
+        state.game = fresh;
+        if (activePanel === 'panel-score') renderScoreEntry();
+        else renderBoard();
+      }
+    }
+  }, 8000);
+
+  // Restore last
+  await tryRestore();
+  await renderHome();
+
+  $('loading').style.display = 'none';
+  $('main').style.display = 'block';
+}
+
+async function tryRestore() {
+  const code = await getLastGameCode();
+  if (!code) return;
+  const g = await loadGame(code);
+  if (g) {
+    state.game = g;
+    enableGameTabs(true);
+  }
+}
+
+// Boot the app. If anything throws, surface it on the loading screen so we
+// don't get stuck silently.
+(async () => {
+  try {
+    await init();
+  } catch (e) {
+    console.error('Init failed:', e);
+    const loading = document.getElementById('loading');
+    if (loading) {
+      loading.innerHTML = '<p style="color:#ff8a8a">Couldn\'t start the app: ' + (e && e.message ? e.message : 'unknown error') + '</p><p class="small-text">Open the browser console for details.</p>';
+    }
+  }
+})();
+
+// ============================================================
+// MULTI-PAGE NAVIGATION PATCH
+// Maps tab names to their HTML files
+// ============================================================
+const PAGE_MAP = {
+  home:    'index.html',
+  setup:   'setup.html',
+  score:   'score.html',
+  board:   'board.html',
+  rounds:  'rounds.html',
+  tourneys:'events.html',
+  bets:    'bets.html',
+  stats:   'stats.html'
+};
+
+// Detect which tab is active from the URL
+function getCurrentTab() {
+  const path = window.location.pathname.split('/').pop() || 'index.html';
+  const map = {
+    'index.html': 'home',
+    'setup.html': 'setup',
+    'score.html': 'score',
+    'board.html': 'board',
+    'rounds.html': 'rounds',
+    'events.html': 'tourneys',
+    'bets.html': 'bets',
+    'stats.html': 'stats'
+  };
+  return map[path] || 'home';
+}
+
+// Override switchTab to navigate between pages
+window.switchTab = function(name) {
+  const page = PAGE_MAP[name];
+  if (page) {
+    window.location.href = page;
+  }
+};
+
+// On page load: activate the right panel and nav link, then render
+window.addEventListener('DOMContentLoaded', () => {
+  const current = getCurrentTab();
+
+  // Mark the matching nav link as active
+  document.querySelectorAll('.tab').forEach(t => {
+    const href = t.getAttribute('href') || '';
+    const tabFile = href.split('/').pop();
+    const matched = PAGE_MAP[current] === tabFile || (current === 'home' && (tabFile === 'index.html' || tabFile === ''));
+    t.classList.toggle('active', matched);
+  });
+
+  // Activate the correct panel div (each page has only one panel, but keep compatible)
+  const panelId = 'panel-' + current;
+  document.querySelectorAll('.panel').forEach(p => {
+    p.classList.toggle('active', p.id === panelId);
+  });
+
+  // Disable score/board tabs if no active round
+  const scoreTab = document.getElementById('tab-score');
+  const boardTab = document.getElementById('tab-board');
+  // Tab enable state is handled by enableGameTabs() in init()
+});

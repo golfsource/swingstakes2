@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Bets — SwingStakes</title>
+<link rel="stylesheet" href="shared.css">
+
+</head>
+<body>
+<div class="app">
+  <div id="loading" class="empty">Loading...</div>
+  <div id="main" style="display:none">
+    <nav class="tabs">
+      <a href="index.html" class="tab">Home</a>
+      <a href="setup.html" class="tab">Setup</a>
+      <a href="score.html" class="tab" id="tab-score">Score</a>
+      <a href="board.html" class="tab" id="tab-board">Board</a>
+      <a href="rounds.html" class="tab">Rounds</a>
+      <a href="events.html" class="tab">Events</a>
+      <a href="bets.html" class="tab  active">Bets</a>
+      <a href="stats.html" class="tab">Stats</a>
+    </nav>
+    <div class="panel active" id="panel-bets">
+      <div class="card">
+        <h2>📖 Bets explained</h2>
+        <p class="help-text" style="margin-bottom:0">
+          A reference for every game and side bet in the app. Tap any header to expand. New to a bet? Read it here, then enable it on the Setup screen when you create a round.
+        </p>
+      </div>
+
+      <div class="card">
+        <h2 style="font-size:14px;color:var(--accent);margin-bottom:8px;text-transform:uppercase;letter-spacing:0.05em">👥 Per-game participants</h2>
+        <p class="help-text" style="margin-top:0">
+          Each game has its own participant picker on the Setup screen. You can run a Vegas with all 4 players AND a Skins side bet with just 2 of them, AND a Nassau between a different pair — all in the same round. Tap each player's name on a game's chip row to include them. Default is empty: you must explicitly pick participants. Players who aren't in a game don't pay or collect for it.
+        </p>
+      </div>
+
+      <!-- Main games -->
+      <div class="card">
+        <h2 style="font-size:14px;color:var(--accent);margin-bottom:8px;text-transform:uppercase;letter-spacing:0.05em">Main games</h2>
+
+        <details class="bet-explainer">
+          <summary>🎯 Skins</summary>
+          <div class="bet-body">
+            <p><strong>How it works:</strong> The lowest score on a hole wins the "skin" (the dollar value for that hole). If two or more players tie for low, no one wins — the skin either <em>carries over</em> to the next hole (pot grows) or is <em>split</em> among tied players, depending on what you set.</p>
+            <p><strong>Par-or-better requirement (optional):</strong> turn this on and the lowest score still has to be at par or better to win the skin. Choose "net par" (after handicap strokes) or "gross par" (raw score). If the leader makes bogey or worse, no one wins — the skin carries over (or dies, per your tied-skins rule).</p>
+            <p><strong>Example:</strong> $1 skins. You make a 4 on a par 4 while everyone else makes 5. You win $1 from each player. Next hole, the low score is a 6 on a par 5 — with par-or-better off, the low scorer wins; with par-or-better on, no one wins because nobody made par, and the skin carries to the next hole.</p>
+            <p><strong>Setup options:</strong> dollar value per skin, tie behavior (carry / split / none), win requirement (any score / net par / gross par).</p>
+          </div>
+        </details>
+
+        <details class="bet-explainer">
+          <summary>⛳ Nassau (with Huckle)</summary>
+          <div class="bet-body">
+            <p><strong>How it works:</strong> Three separate bets in one — front 9, back 9, and overall 18. Each is worth the same dollar amount.</p>
+            <p><strong>Two scoring formats:</strong></p>
+            <p>• <strong>Stroke play (default):</strong> lowest total score wins each segment.<br>
+            • <strong>Match play:</strong> count holes won (e.g., "1 up after 5"). Closes when one player can't catch up ("3&2" means won 3 with 2 to play).</p>
+            <p><strong>Special-score bonuses:</strong> on top of the segment bets, every birdie, eagle, and hole-in-one pays a bonus from each other player. Albatross pays at the eagle rate.</p>
+            <p><strong>📣 Huckle:</strong> if you're <strong>down 2+</strong> in any segment (strokes for stroke play, holes for match play), you can call a Huckle — a fresh side bet for the same dollar amount, between you and the current leader, played from this hole through the end of that segment.</p>
+            <p>• When you're eligible, the score-entry screen shows a <em>📣 Call Huckle</em> button.<br>
+            • Huckles can stack: if you're down 2+ in your active Huckle, you can Huckle again on top of it.<br>
+            • Counter-huckles are not allowed: only the original trailing player can stack.<br>
+            • If you don't call before the segment ends, the bet just plays out.</p>
+            <p><strong>Example:</strong> $5 Nassau with $10 birdies. After 5 holes you're down 2 strokes on the front — call Huckle. New $5 bet runs holes 6–9 between you and the leader. Lowest total over those 4 holes wins the Huckle. The original front-9 bet still plays out separately.</p>
+            <p><strong>Setup options:</strong> dollar value per side, format (stroke/match), allow Huckles toggle, birdie/eagle/HIO payouts.</p>
+          </div>
+        </details>
+
+        <details class="bet-explainer">
+          <summary>💰 Stroke play pot</summary>
+          <div class="bet-body">
+            <p><strong>How it works:</strong> Everyone puts a fixed amount in the pot. Lowest 18-hole total takes it all.</p>
+            <p><strong>Example:</strong> 4 players, $20 buy-in = $80 pot. Whoever shoots the lowest gross (or net, your choice) wins the whole pot.</p>
+            <p><strong>Setup options:</strong> buy-in amount, net or gross scoring.</p>
+          </div>
+        </details>
+
+        <details class="bet-explainer">
+          <summary>🏦 Banker</summary>
+          <div class="bet-body">
+            <p><strong>How it works:</strong> One player is the "banker" each hole. Every other player plays a 1-on-1 match against the banker. Each player picks their own bet for the hole. The banker plays everyone simultaneously.</p>
+            <p><strong>Banker rotation:</strong> rotates through the order on holes 1–15 (configurable cutoff). On the last few holes, the biggest loser picks who's banker next.</p>
+            <p><strong>Pressing:</strong> any player can <em>press</em> their bet, doubling their own wager. The banker can <em>press back</em>, doubling everyone's bet (stacks on top of player presses). Banker presses always available, even with no player pressing.</p>
+            <p><strong>Birdie auto-double:</strong> optional setting. If on, anyone making a birdie automatically doubles their match for that hole (or all matches that hole, your choice).</p>
+            <p><strong>Example:</strong> Banker shoots a 4 on a par 4. You bet $5, made 5. You owe banker $5. Tyler bet $2 and pressed → his bet became $4 — but he made a 3 (birdie), so banker owes him $4 (or $8 if "doubles all" is on).</p>
+            <p><strong>Setup options:</strong> net or gross, loser-picks rule cutoff hole, banker rotation order (setup or random), birdie auto-double behavior.</p>
+          </div>
+        </details>
+
+        <details class="bet-explainer">
+          <summary>🎰 Vegas (4 players, 2v2)</summary>
+          <div class="bet-body">
+            <p><strong>How it works:</strong> Four players split into two teams of two. Each team's score on a hole is formed by combining both partners' scores into a two-digit number — lower digit first. So a 4 and a 5 = 45. Difference between the two teams = points won by the lower team.</p>
+            <p><strong>Team rotation (setup option):</strong></p>
+            <p>• <strong>Rotate every 6 holes</strong> (default): three segments — A&amp;B vs C&amp;D for holes 1-6, A&amp;C vs B&amp;D for holes 7-12, A&amp;D vs B&amp;C for holes 13-18. Everyone partners with everyone over the round.<br>
+            • <strong>Fixed teams all 18</strong>: the first pairing (A&amp;B vs C&amp;D, based on player setup order) plays the entire round. Useful when you've already settled who's on what team and don't want it to shift.</p>
+            <p><strong>Birdie flip:</strong> if your team makes a birdie, the OPPONENT's score gets flipped (5+4 becomes 54 instead of 45) — makes their number bigger and increases the swing against them.</p>
+            <p><strong>Eagle:</strong> flips the opponent AND doubles the point swing on that hole.</p>
+            <p><strong>Tie escalation:</strong> when a hole ties, the next hole's bet is multiplied by 2x. Two ties in a row → next hole is 3x. Three in a row → 4x. The first hole someone wins clears the streak and the multiplier resets to 1x. Stacks with eagle doubles (so a 3x streak hole with an eagle pays 6x).</p>
+            <p><strong>Example:</strong> Team A scores 4 + 5 = 45. Team B scores 5 + 6 = 56. Team A wins 11 points × $0.25 = $2.75. If hole 2 ties (no points), hole 3 becomes 2x. If hole 3 also ties, hole 4 becomes 3x. Whenever a hole is finally won, that hole pays out at the elevated multiplier and hole 5 resets to 1x.</p>
+            <p><strong>Setup options:</strong> $ per point, net or gross, team rotation (rotate / fixed).</p>
+            <p class="bet-note">Requires exactly 4 players. Birdie flip, eagle doubles, and tie escalation always on — same logic as Dynamic Vegas.</p>
+          </div>
+        </details>
+
+        <details class="bet-explainer">
+          <summary>🔀 Dynamic Vegas (4 players)</summary>
+          <div class="bet-body">
+            <p><strong>How it works:</strong> Same scoring as Vegas — two teams of two, scores combined into a paired digit number, low digit first (4+5 = 45), difference = points to the low team. The twist: <strong>partnerships shift every hole</strong> based on the previous hole's results.</p>
+            <p><strong>Team formation:</strong></p>
+            <p>• <strong>Hole 1:</strong> random pairings (deterministic by game code so all phones agree).<br>
+            • <strong>Holes 2–18:</strong> the player who scored <strong>highest on the previous hole</strong> partners with the player who scored <strong>lowest</strong>. The other two are the second team.<br>
+            • <strong>Ties (high or low):</strong> partnerships from the previous hole are reused as-is.</p>
+            <p><strong>Birdie flip:</strong> if your team makes a birdie, the OPPONENT's score gets flipped (5+4 becomes 54 instead of 45) — makes their number bigger and increases the swing against them.</p>
+            <p><strong>Eagle:</strong> flips the opponent AND doubles the point swing on that hole.</p>
+            <p><strong>Tie escalation:</strong> when a hole ties, the next hole's bet is multiplied by 2x. Two ties in a row → next hole is 3x. Three in a row → 4x. First win resets back to 1x.</p>
+            <p><strong>Settlement:</strong> one running total over 18 holes. Final point swing × $/point splits between winners and losers.</p>
+            <p><strong>Example:</strong> Hole 5, you and the high scorer from hole 4 are partners. You shoot 4, partner shoots 6 → your team is 46. Opponents shoot 5+5 → 55. You win 9 points. If your team also made the birdie, opponents' 55 stays 55 (already the high — can't flip). 9 × $0.25 = $2.25 to your team.</p>
+            <p><strong>Setup options:</strong> $ per point, net or gross.</p>
+            <p class="bet-note">Requires exactly 4 players. Always-on flip and eagle doubles — no toggles. The score-entry screen shows the current hole's teams at the top.</p>
+          </div>
+        </details>
+
+        <details class="bet-explainer">
+          <summary>6️⃣ 6's / Round Robin (4 players)</summary>
+          <div class="bet-body">
+            <p><strong>How it works:</strong> Four players, partnerships rotate every 6 holes so everyone is partnered with everyone else for one segment. Best ball per team wins or loses each hole's bet.</p>
+            <p><strong>Example:</strong> Holes 1–6: A+B vs C+D. Holes 7–12: A+C vs B+D. Holes 13–18: A+D vs B+C. Total each segment separately, settle up at the end.</p>
+            <p><strong>Setup options:</strong> $ per hole won, net or gross.</p>
+            <p class="bet-note">Requires exactly 4 players.</p>
+          </div>
+        </details>
+
+        <details class="bet-explainer">
+          <summary>🐺 Wolf / Captain</summary>
+          <div class="bet-body">
+            <p><strong>How it works:</strong> The "Wolf" rotates each hole. After watching the others tee off, the Wolf either picks a partner for that hole (1v1 against the other two) or goes <em>Lone Wolf</em> against all three (2x bet). Brave Wolves can call <em>Blind Lone Wolf</em> before anyone tees off (3x bet).</p>
+            <p><strong>Example:</strong> $2 Wolf bet. You're Wolf, you go Lone Wolf — that's $4. You win → each opponent owes you $4 (total $12 for the hole). You lose → you owe $4 to each.</p>
+            <p><strong>Setup options:</strong> $ per hole.</p>
+            <p class="bet-note">Best with 3–4 players.</p>
+          </div>
+        </details>
+
+        <details class="bet-explainer">
+          <summary>🤝 Match play (1v1)</summary>
+          <div class="bet-body">
+            <p><strong>How it works:</strong> Pair players up head-to-head. Each pairing plays match play — count holes won, not strokes. "1 up" means up by 1 hole. Match closes when one player can't possibly catch up ("3&2" = won 3 holes with 2 to play).</p>
+            <p><strong>Example:</strong> $20 match. You're 2 up after 16. Opponent can win at most 1 of the last 2 holes — match closes, you win $20.</p>
+            <p><strong>Setup options:</strong> $ per match, net or gross.</p>
+          </div>
+        </details>
+
+        <details class="bet-explainer">
+          <summary>👥 Team match play</summary>
+          <div class="bet-body">
+            <p><strong>How it works:</strong> Pick fixed teams up front. Each hole, the better ball (lowest score) on each team competes — team with the lower best ball wins the hole. Match decided hole-by-hole over 18.</p>
+            <p><strong>Example:</strong> 4 players, 2v2. Hole 1: Team A's best ball is 4, Team B's is 5. Team A is 1 up. Match closes when one team can't catch up.</p>
+            <p><strong>Setup options:</strong> $ per player, net or gross, team picker for any even-sized team (2v2, 3v3, 4v4, etc.).</p>
+            <p class="bet-note">Requires an even number of players (2+).</p>
+          </div>
+        </details>
+
+        <details class="bet-explainer">
+          <summary>🎯 Team low ball</summary>
+          <div class="bet-body">
+            <p><strong>How it works:</strong> Same teams as Team match play, but instead of hole-by-hole match play, you sum up each team's best ball over all 18 holes. Lowest total wins.</p>
+            <p><strong>Example:</strong> Team A's combined best balls = 68. Team B's = 71. Team A wins by 3 strokes — collect the bet.</p>
+            <p><strong>Setup options:</strong> $ per player, net or gross, team picker.</p>
+            <p class="bet-note">Requires an even number of players (2+).</p>
+          </div>
+        </details>
+
+        <details class="bet-explainer">
+          <summary>⛳ Par 3 Greenie (with Buddy Fucker)</summary>
+          <div class="bet-body">
+            <p><strong>How it works:</strong> Closest to the pin on a par 3 wins from each other player — but only if they make par or better. Default $5 per other player. Bigger stakes than the junk-style Greenie, lives as its own side game.</p>
+            <p><strong>💩 Buddy Fucker (built-in option):</strong> if the Par 3 Greenie winner 3-putts, two things happen at once: (1) they <strong>forfeit the greenie payout entirely</strong>, and (2) they pay every other player a fixed amount (default $5).</p>
+            <p><strong>On the score screen:</strong> on every par 3, you'll see a Par 3 Greenie row with chips for each player. Tap to mark the winner. If Buddy Fucker is on, a "did the greenie winner 3-putt?" sub-row appears whenever there's a winner — tap a name to mark them. Their greenie chip will get crossed out to show the payout was canceled.</p>
+            <p><strong>Example:</strong> $5 greenie, $5 Buddy Fucker, 4 players. You stick it to 3 feet on a par 3 — greenie is yours. Then you 3-putt for bogey. Result:</p>
+            <p>• Greenie: $0 (forfeited)<br>
+            • Buddy Fucker: −$5 from each other player = −$15<br>
+            • <strong>Net for the hole: −$15.</strong> Brutal.</p>
+            <p><strong>Setup options:</strong> $ per other player for the greenie, Buddy Fucker on/off, $ per other player for Buddy Fucker.</p>
+            <p class="bet-note">Independent from the smaller junk-style Greenie — you can run both if you want a $1 junk Greenie alongside this $5 game.</p>
+          </div>
+        </details>
+      </div>
+
+      <!-- Junk side bets -->
+      <div class="card">
+        <h2 style="font-size:14px;color:var(--accent);margin-bottom:8px;text-transform:uppercase;letter-spacing:0.05em">Junk side bets</h2>
+        <p class="help-text" style="margin-bottom:10px">Small per-event bets that pile on top of the main games. Each earner gets paid the bet amount from every other player.</p>
+
+        <details class="bet-explainer">
+          <summary>🟢 GIR (Green in Regulation)</summary>
+          <div class="bet-body">
+            <p><strong>How it works:</strong> Hit the green in regulation — meaning your ball is on the putting surface in <em>par minus 2</em> shots. So one shot on a par 3, two on a par 4, three on a par 5. Works on any hole, not just par 3s.</p>
+            <p><strong>Example:</strong> $1 GIR, 4 players. You hit the green on a par 4 in 2 shots. Collect $1 from each of the other 3 players. Multiple players can earn it on the same hole — everyone who hit the green in regulation gets paid.</p>
+            <p class="bet-note">Different from "Par 3 Greenie" in the Main games section — that one is closest-to-pin on par 3s only and pays bigger. GIR is a smaller side bet that triggers any hole you stick the green on time.</p>
+          </div>
+        </details>
+
+        <details class="bet-explainer">
+          <summary>🏖️ Sandy</summary>
+          <div class="bet-body">
+            <p><strong>How it works:</strong> Make par or better after being in a bunker on that hole.</p>
+            <p><strong>Example:</strong> Hit a fairway bunker, blast out, two-putt for par on a par 4. That's a sandy.</p>
+          </div>
+        </details>
+
+        <details class="bet-explainer">
+          <summary>🌳 Barkie</summary>
+          <div class="bet-body">
+            <p><strong>How it works:</strong> Make par or better after hitting a tree.</p>
+            <p><strong>Example:</strong> Drive ricochets off an oak, you punch out, then stick it close and save par. Barkie.</p>
+          </div>
+        </details>
+
+        <details class="bet-explainer">
+          <summary>📏 Polie</summary>
+          <div class="bet-body">
+            <p><strong>How it works:</strong> Make a long putt — typically 10+ feet. Group sets the standard.</p>
+            <p><strong>Example:</strong> Drain a 25-footer for birdie. Polie.</p>
+          </div>
+        </details>
+
+        <details class="bet-explainer">
+          <summary>🐍 Snake</summary>
+          <div class="bet-body">
+            <p><strong>How it works:</strong> Whoever 3-putts gets the snake. Hangs on you until someone else 3-putts. Whoever holds it at the end of the round pays out.</p>
+            <p><strong>Example:</strong> $0.50 snake. You 3-putt hole 4 — snake's yours. Tyler 3-putts hole 11 — passed to him. He holds it through 18. Tyler owes everyone else $0.50 each.</p>
+            <p class="bet-note">Defaults to $0.50 because it tends to land on the same person.</p>
+          </div>
+        </details>
+
+        <details class="bet-explainer">
+          <summary>⛳ Arnie</summary>
+          <div class="bet-body">
+            <p><strong>How it works:</strong> Make par without hitting the fairway or the green in regulation. Named for Arnold Palmer's go-for-broke style — out of trouble all day, still makes par.</p>
+            <p><strong>Example:</strong> Drive into the rough, second shot into a bunker, blast out and one-putt for par on a par 4. Pure Arnie.</p>
+          </div>
+        </details>
+
+        <details class="bet-explainer">
+          <summary>🎯 Chip-In</summary>
+          <div class="bet-body">
+            <p><strong>How it works:</strong> Hole out from off the green for par or better. The shot has to be a chip, pitch, or putt-from-the-fringe — anywhere off the putting surface — and it has to score par or under. A chip-in for bogey doesn't count.</p>
+            <p><strong>Example:</strong> $1 chip-ins, 4 players. You miss the green left on a par 4, in 2. You chip in from 30 feet for a 3 (birdie). Collect $1 from each of the other 3 players. If you'd chipped in for a 4 (par), still counts. If you'd been chipping for bogey, no chip-in.</p>
+            <p class="bet-note">Holed-out shots from on the green don't count — that's just a putt. Chip-in implies the ball was off the green when you hit the holed shot.</p>
+          </div>
+        </details>
+      </div>
+
+      <!-- Handicap rules -->
+      <div class="card">
+        <h2 style="font-size:14px;color:var(--accent);margin-bottom:8px;text-transform:uppercase;letter-spacing:0.05em">Handicap rules</h2>
+
+        <details class="bet-explainer">
+          <summary>📊 Handicap basis</summary>
+          <div class="bet-body">
+            <p><strong>Each player uses their own handicap:</strong> traditional setup. A 12-handicap gets 12 strokes, an 8-handicap gets 8.</p>
+            <p><strong>Play off the lowest handicap:</strong> the lowest-HCP player plays scratch (0 strokes). Everyone else gets the difference. So if the lowest is a 5, the 12-handicap gets 7 strokes (12 − 5). Common in match play to keep things fair without giving up too many strokes.</p>
+          </div>
+        </details>
+
+        <details class="bet-explainer">
+          <summary>⚖️ Handicap percentage</summary>
+          <div class="bet-body">
+            <p>Slider from 25% to 100%. Multiplies everyone's effective handicap. Common conventions:</p>
+            <p>• <strong>100%:</strong> full handicap (default)<br>
+            • <strong>90%:</strong> stroke play with mixed groups<br>
+            • <strong>80%–85%:</strong> typical for fourball / better-ball matches<br>
+            • <strong>75%:</strong> singles match play in some leagues<br>
+            • <strong>50%:</strong> heavy reduction, only the high handicaps get strokes</p>
+            <p>Combine with "play off lowest handicap" for proper match-play conventions.</p>
+          </div>
+        </details>
+
+        <details class="bet-explainer">
+          <summary>3️⃣ No strokes on par 3s</summary>
+          <div class="bet-body">
+            <p>Optional rule. When checked, no player gets a stroke on any par 3 hole, regardless of stroke index. Useful when the group feels giving strokes on short holes inflates handicaps unfairly.</p>
+          </div>
+        </details>
+      </div>
+
+      <!-- HANDICAP TRACKING SECTION -->
+      <div class="card">
+        <h2 style="font-size:14px;color:var(--accent);margin-bottom:8px;text-transform:uppercase;letter-spacing:0.05em">📊 How handicaps work</h2>
+
+        <details class="bet-explainer">
+          <summary>The basics</summary>
+          <div class="bet-body">
+            <p>This app uses a simplified <strong>World Handicap System</strong> calculation. Once a player has 3+ rounds with course rating &amp; slope stored, their handicap auto-calculates and pre-fills on the Setup screen when you pick them from the saved roster.</p>
+            <p>Before 3 rounds, the HCP field shows whatever you manually enter. The roster picker badge tells you "1/3 rounds for auto-calc" so you know how close they are.</p>
+          </div>
+        </details>
+
+        <details class="bet-explainer">
+          <summary>What gets stored</summary>
+          <div class="bet-body">
+            <p>Every time you tap "Save &amp; return home" on a finished round, the app archives each player's:</p>
+            <p>• <strong>Date</strong> the round was played<br>
+            • <strong>Course name</strong><br>
+            • <strong>Tee played</strong> from (Forward, Middle, Back, etc.)<br>
+            • <strong>Gross score</strong> (total strokes)<br>
+            • <strong>Course rating &amp; slope</strong> for that tee<br>
+            • <strong>Differential</strong> = (113 / slope) × (gross − rating)</p>
+            <p>Rounds without rating/slope set, or rounds where a player didn't complete 18 holes, are silently skipped.</p>
+          </div>
+        </details>
+
+        <details class="bet-explainer">
+          <summary>The handicap math</summary>
+          <div class="bet-body">
+            <p>From the player's stored differentials, the app picks the lowest <em>N</em> from their most recent 20 rounds and averages them, applying small adjustments for low round counts:</p>
+            <p>• <strong>3 rounds:</strong> lowest 1 minus 2.0<br>
+            • <strong>4 rounds:</strong> lowest 1 minus 1.0<br>
+            • <strong>5 rounds:</strong> lowest 1<br>
+            • <strong>6 rounds:</strong> avg of lowest 2 minus 1.0<br>
+            • <strong>7-8 rounds:</strong> avg of lowest 2<br>
+            • <strong>9-10 rounds:</strong> avg of lowest 3<br>
+            • <strong>11-12 rounds:</strong> avg of lowest 4<br>
+            • <strong>13-14 rounds:</strong> avg of lowest 5<br>
+            • <strong>15-16 rounds:</strong> avg of lowest 6<br>
+            • <strong>17-18 rounds:</strong> avg of lowest 7<br>
+            • <strong>19+ rounds:</strong> avg of lowest 8 of last 20</p>
+          </div>
+        </details>
+
+        <details class="bet-explainer">
+          <summary>Where data lives</summary>
+          <div class="bet-body">
+            <p>All score history is stored <strong>locally on this device</strong> — nothing is uploaded or synced. If you swap phones or switch devices, your roster history doesn't follow.</p>
+            <p>If your buddy uses a different device for setup, his roster lives on his phone with his picture of who's been playing. Each device builds its own personal handicap database from the rounds you enter on it.</p>
+          </div>
+        </details>
+
+        <details class="bet-explainer">
+          <summary>Tee selection per player</summary>
+          <div class="bet-body">
+            <p>Each course can have multiple tee boxes (Forward, Middle, Back, Championship — or whatever you name them). Each tee has its own rating and slope.</p>
+            <p>When you set up a round, each player picks which tee they're playing. Their differential gets calculated using <em>their</em> tee's numbers — so a high-handicap player on the forward tees and a scratch on the championship tees get fair handicap math even though they're playing the same round.</p>
+            <p>If a player doesn't pick a tee for a round, that round won't count toward their handicap (the round still works for betting).</p>
+          </div>
+        </details>
+      </div>
+
+      <div class="card">
+        <p class="help-text" style="text-align:center;margin:0">
+          Got a bet not covered here? Send it our way and we'll add it.
+        </p>
+      </div>
+    </div>
+
+    <!-- ============ STATS PANEL ============ -->
+
+  <footer class="app-footer">
+    <span>Live Scoring &amp; Betting</span>
+    <span id="sync-indicator" title="Sync status" style="display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--text-muted);vertical-align:middle;margin-left:6px;transition:transform 0.2s,background 0.3s"></span>
+  </footer>
+</div>
+
+<!-- Tournament create modal -->
+<div class="modal-overlay" id="tourney-modal">
+  <div class="modal">
+    <h2 id="tourney-modal-title">New tournament</h2>
+    <div class="field">
+      <label>Tournament name</label>
+      <input type="text" id="tm-name" placeholder="Saturday morning league">
+    </div>
+    <div class="row">
+      <div class="field">
+        <label>Date</label>
+        <input type="date" id="tm-date">
+      </div>
+      <div class="field">
+        <label>Tee time</label>
+        <input type="time" id="tm-time">
+      </div>
+    </div>
+    <div class="field">
+      <label>Course</label>
+      <input type="text" id="tm-course" placeholder="Pine Valley">
+    </div>
+    <div class="field">
+      <label>Players (comma-separated)</label>
+      <textarea id="tm-players" rows="2" placeholder="John, Mike, Dave, Tom"></textarea>
+    </div>
+    <div class="field">
+      <label>Notes</label>
+      <textarea id="tm-notes" rows="2" placeholder="Cart fees, format details, etc."></textarea>
+    </div>
+    <div class="actions">
+      <button id="tm-cancel">Cancel</button>
+      <button class="primary" id="tm-save" style="flex:2">Save tournament</button>
+    </div>
+  </div>
+</div>
+
+<!-- Wolf pick partner modal -->
+<div class="modal-overlay" id="wolf-modal">
+  <div class="modal">
+    <h2>Hole <span id="wolf-hole">—</span> — <span id="wolf-captain">—</span> is captain</h2>
+    <p class="help-text" style="margin-bottom:12px">Pick a partner after seeing tee shots, or go Lone Wolf for double the bet.</p>
+    <div id="wolf-pick-options"></div>
+    <div class="actions">
+      <button id="wolf-cancel">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Huckle modal -->
+<div class="modal-overlay" id="huckle-modal">
+  <div class="modal" style="max-width:520px">
+    <h2>📣 Call a Huckle</h2>
+    <p class="help-text" style="margin-bottom:12px">Players down 2+ can call a Huckle — a separate side bet for the same dollar amount, played from this hole through the end of the segment.</p>
+    <div id="huckle-options"></div>
+    <div class="actions" style="margin-top:14px">
+      <button id="huckle-cancel" style="flex:1">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Player roster picker modal -->
+<div class="modal-overlay" id="roster-modal">
+  <div class="modal">
+    <h2>Pick from saved players</h2>
+    <p class="help-text" style="margin-bottom:8px">Tap to add. Names are saved automatically when you start a round.</p>
+    <input type="text" id="roster-search" placeholder="Search names…" style="width:100%;margin-bottom:10px">
+    <div id="roster-list" style="max-height:340px;overflow-y:auto"></div>
+    <div class="actions" style="margin-top:12px">
+      <button id="roster-cancel" style="flex:1">Done</button>
+    </div>
+  </div>
+</div>
+
+<!-- Round summary modal — shown when finishing a round -->
+<div class="modal-overlay" id="summary-modal">
+  <div class="modal" style="max-width:640px">
+    <h2 style="margin-bottom:4px">🏁 Round complete</h2>
+    <div id="summary-subtitle" class="small-text" style="margin-bottom:14px"></div>
+    <div id="summary-content" style="max-height:60vh;overflow-y:auto"></div>
+    <div class="actions" style="margin-top:14px">
+      <button id="summary-back" style="flex:1">Back to board</button>
+      <button class="primary" id="summary-confirm" style="flex:2">Save & return home</button>
+    </div>
+  </div>
+</div>
+
+<!-- Save-as-tournament prompt: name + date, captures the current setup form -->
+<div class="modal-overlay" id="save-tourney-modal">
+  <div class="modal">
+    <h2>Save as tournament</h2>
+    <p class="help-text" style="margin-bottom:12px">All your current setup (course, players, handicap rules, betting games) will be saved. You can come back any time to start the round — everything stays editable on game day.</p>
+    <div class="field">
+      <label>Tournament name</label>
+      <input type="text" id="stm-name" placeholder="e.g. Saturday at Buffalo Creek">
+    </div>
+    <div class="row" style="margin-top:8px">
+      <div>
+        <label>Date (optional)</label>
+        <input type="date" id="stm-date">
+      </div>
+      <div>
+        <label>Time (optional)</label>
+        <input type="time" id="stm-time">
+      </div>
+    </div>
+    <div class="field" style="margin-top:8px">
+      <label>Notes (optional)</label>
+      <textarea id="stm-notes" rows="2" placeholder="Anything to remember"></textarea>
+    </div>
+    <div class="actions" style="margin-top:14px">
+      <button id="stm-cancel" style="flex:1">Cancel</button>
+      <button class="primary" id="stm-save" style="flex:2">Save tournament</button>
+    </div>
+  </div>
+</div>
+
+<!-- Tournament action sheet: shown when tapping a tourney card -->
+<div class="modal-overlay" id="tourney-actions-modal">
+  <div class="modal">
+    <h2 id="tam-name">Tournament</h2>
+    <div id="tam-meta" class="small-text" style="margin-bottom:14px"></div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <button class="primary full" id="tam-start">▶ Start round now</button>
+      <button class="full" id="tam-edit">Edit details</button>
+      <button class="danger full" id="tam-delete">Delete tournament</button>
+      <button class="full" id="tam-cancel">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- Fixed active-round bar (sits at bottom of viewport, only shown when round active) -->
+<div id="active-round-bar" style="display:none">
+  <div id="active-round-bar-info"></div>
+  <div style="display:flex;gap:6px;margin-top:6px">
+    <button class="primary small" style="flex:1" onclick="switchTab('score')">Continue scoring</button>
+    <button class="small" style="flex:1" onclick="switchTab('board')">View board</button>
+  </div>
+</div>
+
+  </div><!-- /main -->
+</div><!-- /app -->
+<script src="shared.js"></script>
+</body>
+</html>

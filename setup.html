@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Setup — SwingStakes</title>
+<link rel="stylesheet" href="shared.css">
+
+</head>
+<body>
+<div class="app">
+  <div id="loading" class="empty">Loading...</div>
+  <div id="main" style="display:none">
+    <nav class="tabs">
+      <a href="index.html" class="tab">Home</a>
+      <a href="setup.html" class="tab  active">Setup</a>
+      <a href="score.html" class="tab" id="tab-score">Score</a>
+      <a href="board.html" class="tab" id="tab-board">Board</a>
+      <a href="rounds.html" class="tab">Rounds</a>
+      <a href="events.html" class="tab">Events</a>
+      <a href="bets.html" class="tab">Bets</a>
+      <a href="stats.html" class="tab">Stats</a>
+    </nav>
+    <div class="panel active" id="panel-setup">
+      <div id="setup-no-game">
+        <div class="card">
+          <h2>Start a new round</h2>
+          <p class="help-text" style="margin-bottom:14px">
+            Set up a round, share the code with buddies, and everyone sees the live scoring.
+          </p>
+          <button class="primary full" id="btn-new-game">New round</button>
+        </div>
+
+        <div class="card">
+          <h2>Join with code</h2>
+          <div class="field">
+            <label>Game code</label>
+            <input type="text" id="join-code" placeholder="e.g. PINE42" maxlength="10" style="text-transform:uppercase;letter-spacing:0.1em;font-weight:600">
+          </div>
+          <button class="full" id="btn-join-game">Join round</button>
+        </div>
+      </div>
+
+      <div id="setup-with-game" style="display:none">
+        <div class="game-code-display">
+          <div class="label">Share this code</div>
+          <div class="code" id="display-code">—</div>
+          <div class="hint">Buddies enter this on their phone to join</div>
+        </div>
+
+        <!-- Tournament info if applicable -->
+        <div class="card" id="tourney-context" style="display:none">
+          <h3>Tournament</h3>
+          <div id="tourney-context-name" style="font-weight:500"></div>
+          <div class="small-text" id="tourney-context-date"></div>
+        </div>
+
+        <div class="card">
+          <h2>Course</h2>
+          <div class="field">
+            <label>Pick from library</label>
+            <select id="course-picker">
+              <option value="">— Choose a course —</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Course name (or edit if custom)</label>
+            <input type="text" id="course-name" placeholder="e.g. Pine Valley">
+          </div>
+          <div id="course-status" class="course-status" style="display:none">
+            <span class="icon"></span>
+            <span class="text"></span>
+          </div>
+
+          <div id="scorecard-editor" style="display:none">
+            <h3 style="margin-top:14px">Tees (rating &amp; slope per tee box)</h3>
+            <div id="tees-list"></div>
+            <button class="small" id="btn-add-tee" style="margin-top:6px">+ Add another tee</button>
+            <div class="help-text" style="margin-bottom:8px">
+              Each tee box has its own rating &amp; slope (from the scorecard or course website). Add as many tees as you need. Once entered, they'll save with the course so you don't have to re-enter next round. Players pick their tee individually below.
+            </div>
+
+            <h3 style="margin-top:14px">Par per hole</h3>
+            <div class="preset-buttons">
+              <button class="small" data-preset="standard">Standard 72</button>
+              <button class="small" data-preset="par70">Par 70</button>
+              <button class="small" data-preset="par71">Par 71</button>
+            </div>
+            <div class="hole-input-grid" id="par-grid"></div>
+
+            <h3 style="margin-top:14px">Stroke index per hole (1=hardest, 18=easiest)</h3>
+            <div class="preset-buttons">
+              <button class="small" id="btn-default-si">Default (1-18)</button>
+            </div>
+            <div class="hole-input-grid" id="si-grid"></div>
+            <div class="help-text">Once you start the round, this scorecard is saved for everyone in your group — next time anyone plays here, it'll auto-fill.</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Players (2-12) & handicaps</h2>
+          <div id="players-list"></div>
+          <div style="display:flex;gap:6px;margin-top:8px">
+            <button class="full" id="btn-add-player" style="flex:1">+ Add player</button>
+            <button class="full" id="btn-pick-roster" style="flex:1">📇 Pick from saved</button>
+          </div>
+          <div class="help-text" style="text-align:center">
+            Enter each player's course handicap. Names are saved automatically when you start a round.
+          </div>
+
+          <h3 style="margin-top:14px">Handicap rules</h3>
+          <div class="field">
+            <label>Handicap basis</label>
+            <select id="hcp-basis">
+              <option value="full" selected>Each player uses their own handicap</option>
+              <option value="lowest">Play off the lowest handicap (others get the difference)</option>
+            </select>
+          </div>
+          <div class="field" style="margin-top:8px">
+            <label>Handicap percentage: <span id="hcp-pct-label" style="color:var(--accent);font-weight:600">100%</span></label>
+            <input type="range" id="hcp-pct" min="25" max="100" step="5" value="100" style="width:100%">
+            <div class="help-text" style="display:flex;justify-content:space-between;margin-top:2px;font-size:11px">
+              <span>25%</span><span>50%</span><span>75%</span><span>100%</span>
+            </div>
+          </div>
+          <label style="display:flex;align-items:center;gap:8px;margin-top:10px;cursor:pointer">
+            <input type="checkbox" id="hcp-no-par3-strokes" style="width:auto;margin:0">
+            <span style="font-size:13px">No strokes given on par 3s</span>
+          </label>
+        </div>
+
+        <div class="card">
+          <h2>Betting games</h2>
+
+          <!-- SKINS -->
+          <label class="game-toggle">
+            <input type="checkbox" id="game-skins">
+            <div style="flex:1">
+              <div class="name">Skins</div>
+              <div class="desc">Lowest score on a hole wins the skin</div>
+            </div>
+          </label>
+          <div class="game-options" id="opts-skins">
+            <div class="row">
+              <div>
+                <label>$ per skin</label>
+                <input type="number" id="skin-value" value="2" min="0" step="0.5">
+              </div>
+              <div>
+                <label>Tied skins</label>
+                <select id="skin-carry">
+                  <option value="carry">Carry over</option>
+                  <option value="split">Split among tied</option>
+                  <option value="none">No skin</option>
+                </select>
+              </div>
+            </div>
+            <div class="row" style="margin-top:8px">
+              <div>
+                <label>Win requirement</label>
+                <select id="skin-require">
+                  <option value="none" selected>Any score (lowest wins)</option>
+                  <option value="net">Must make net par or better</option>
+                  <option value="gross">Must make gross par or better</option>
+                </select>
+              </div>
+            </div>
+            <div class="help-text">
+              When "Must make par or better" is on, the lowest score still has to be at par or under to win the skin. If the leader makes bogey, no one wins — the skin carries / splits / dies based on your tied-skins rule above.
+            </div>
+          </div>
+
+          <!-- NASSAU -->
+          <label class="game-toggle">
+            <input type="checkbox" id="game-nassau">
+            <div style="flex:1">
+              <div class="name">Nassau</div>
+              <div class="desc">Front 9, back 9, overall — add as many Nassaus as you want, each with its own pair and bet.</div>
+            </div>
+          </label>
+          <div class="game-options" id="opts-nassau">
+            <div id="nassau-instances"></div>
+            <button class="small" id="btn-add-nassau-instance" style="margin-top:6px">+ Add another Nassau</button>
+            <div class="help-text">
+              Each instance is a 1v1 Nassau with its own pair, bet, format, Huckle option, and special-shot bonuses. <strong>Stroke:</strong> lowest total wins each segment. <strong>Match:</strong> count holes won. Set special-score payouts to 0 to disable.
+            </div>
+          </div>
+
+          <!-- STROKE -->
+          <label class="game-toggle">
+            <input type="checkbox" id="game-stroke">
+            <div style="flex:1">
+              <div class="name">Stroke play pot</div>
+              <div class="desc">Lowest total wins the pot</div>
+            </div>
+          </label>
+          <div class="game-options" id="opts-stroke">
+            <div class="row">
+              <div>
+                <label>Buy-in</label>
+                <input type="number" id="stroke-value" value="10" min="0" step="1">
+              </div>
+              <div>
+                <label>Net or gross</label>
+                <select id="stroke-net">
+                  <option value="net">Net (use HCP)</option>
+                  <option value="gross">Gross</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- BANKER -->
+          <label class="game-toggle">
+            <input type="checkbox" id="game-banker">
+            <div style="flex:1">
+              <div class="name">Banker</div>
+              <div class="desc">Rotates 1-15. On 16-18, biggest loser picks first.</div>
+            </div>
+          </label>
+          <div class="game-options" id="opts-banker">
+            <div class="field">
+              <label>Net or gross</label>
+              <select id="banker-net">
+                <option value="net">Net</option>
+                <option value="gross">Gross</option>
+              </select>
+            </div>
+            <div class="field" style="margin-top:8px">
+              <label>Loser-picks rule starts on hole</label>
+              <select id="banker-loser-start">
+                <option value="16" selected>Hole 16 (last 3)</option>
+                <option value="13">Hole 13 (last 6)</option>
+                <option value="10">Hole 10 (back 9)</option>
+                <option value="99">Never (always rotate)</option>
+              </select>
+            </div>
+            <div class="field" style="margin-top:8px">
+              <label>Banker rotation order</label>
+              <select id="banker-order">
+                <option value="setup" selected>Use player order from setup</option>
+                <option value="random">Random order (shuffled at start)</option>
+              </select>
+            </div>
+            <div class="field" style="margin-top:8px">
+              <label>Birdie or better auto-doubles</label>
+              <select id="banker-birdie-double">
+                <option value="off">Off</option>
+                <option value="anyone" selected>On — anyone's birdie doubles their match</option>
+                <option value="all">On — anyone's birdie doubles ALL matches that hole</option>
+              </select>
+            </div>
+            <div class="help-text">
+              On each hole the banker sets a min and max within this range, then each player picks their own bet. Players can press; banker can re-press to double active presses. Birdie auto-double stacks on top of any presses.
+            </div>
+          </div>
+
+          <!-- VEGAS -->
+          <label class="game-toggle">
+            <input type="checkbox" id="game-vegas">
+            <div style="flex:1">
+              <div class="name">Vegas</div>
+              <div class="desc">2v2 teams. Scores paired (45 vs 56), not added.</div>
+            </div>
+          </label>
+          <div class="game-options" id="opts-vegas">
+            <div class="row">
+              <div>
+                <label>$ per point</label>
+                <input type="number" id="vegas-value" value="0.25" min="0" step="0.05">
+              </div>
+              <div>
+                <label>Net or gross</label>
+                <select id="vegas-net">
+                  <option value="net">Net</option>
+                  <option value="gross">Gross</option>
+                </select>
+              </div>
+            </div>
+            <div class="row" style="margin-top:8px">
+              <div>
+                <label>Team rotation</label>
+                <select id="vegas-rotate">
+                  <option value="rotate" selected>Rotate every 6 holes</option>
+                  <option value="fixed">Fixed teams all 18</option>
+                </select>
+              </div>
+            </div>
+            <div class="help-text">
+              Requires exactly 4 players. Choose rotating partnerships (3 segments of 6 holes, every player partners with every other) or fixed teams for the whole round. Lowest score = first digit; 10+ becomes high-first (104, not 410). <strong>Birdie flips opponent's score; eagle flips AND doubles the point swing.</strong> $0.25/pt is typical.
+            </div>
+          </div>
+
+          <!-- DYNAMIC VEGAS -->
+          <label class="game-toggle">
+            <input type="checkbox" id="game-dvegas">
+            <div style="flex:1">
+              <div class="name">Dynamic Vegas</div>
+              <div class="desc">Vegas + partnerships shift each hole based on previous hole's high & low scorers</div>
+            </div>
+          </label>
+          <div class="game-options" id="opts-dvegas">
+            <div class="row">
+              <div>
+                <label>$ per point</label>
+                <input type="number" id="dvegas-value" value="0.25" min="0" step="0.05">
+              </div>
+              <div>
+                <label>Net or gross</label>
+                <select id="dvegas-net">
+                  <option value="net">Net</option>
+                  <option value="gross">Gross</option>
+                </select>
+              </div>
+            </div>
+            <div class="help-text">
+              Requires exactly 4 players. Hole 1 = random pairings. From hole 2 on, the previous hole's highest scorer pairs with the lowest scorer; the other two are the second team. Ties keep partnerships from the previous hole. <strong>Birdies flip the opponent's score</strong> (5+4 → 54 instead of 45) — eagles flip AND double the point swing on that hole. Settled as one total over 18 holes.
+            </div>
+          </div>
+          <!-- 6's -->
+          <label class="game-toggle">
+            <input type="checkbox" id="game-sixes">
+            <div style="flex:1">
+              <div class="name">6's (Round Robin)</div>
+              <div class="desc">Teams of 2 rotate every 6 holes. Best ball.</div>
+            </div>
+          </label>
+          <div class="game-options" id="opts-sixes">
+            <div class="row">
+              <div>
+                <label>$ per 6-hole segment</label>
+                <input type="number" id="sixes-value" value="5" min="0" step="1">
+              </div>
+              <div>
+                <label>Net or gross</label>
+                <select id="sixes-net">
+                  <option value="net">Net</option>
+                  <option value="gross">Gross</option>
+                </select>
+              </div>
+            </div>
+            <div class="help-text">
+              Requires exactly 4 players. Pairings: A+B vs C+D (1-6), A+C vs B+D (7-12), A+D vs B+C (13-18).
+            </div>
+          </div>
+
+          <!-- WOLF / CAPTAIN -->
+          <label class="game-toggle">
+            <input type="checkbox" id="game-wolf">
+            <div style="flex:1">
+              <div class="name">Captain (Wolf)</div>
+              <div class="desc">Captain rotates, picks partner or goes Lone Wolf.</div>
+            </div>
+          </label>
+          <div class="game-options" id="opts-wolf">
+            <div class="row">
+              <div>
+                <label>$ per hole</label>
+                <input type="number" id="wolf-value" value="1" min="0" step="0.5">
+              </div>
+            </div>
+            <div class="help-text">
+              Best for 4 players. Lone Wolf: 2x. Blind Lone Wolf (called before tee): 3x.
+            </div>
+          </div>
+
+          <!-- MATCH PLAY (INDIVIDUAL) — multi-instance -->
+          <label class="game-toggle">
+            <input type="checkbox" id="game-match">
+            <div style="flex:1">
+              <div class="name">Match play (individual)</div>
+              <div class="desc">1v1 head-to-head. Add as many matches as you want, each with its own pair and bet.</div>
+            </div>
+          </label>
+          <div class="game-options" id="opts-match">
+            <div id="match-instances"></div>
+            <button class="small" id="btn-add-match-instance" style="margin-top:6px">+ Add another match</button>
+            <div class="help-text">
+              Each instance is a separate 1v1 match. Tap two players for the pair, set the wager. Closes out when mathematically decided (e.g. "3&2" means 3 up with 2 to play).
+            </div>
+          </div>
+
+          <!-- TEAM MATCH PLAY -->
+          <label class="game-toggle">
+            <input type="checkbox" id="game-team-match">
+            <div style="flex:1">
+              <div class="name">Team match play</div>
+              <div class="desc">Even teams. Best-ball per hole. Most holes won wins.</div>
+            </div>
+          </label>
+          <div class="game-options" id="opts-team-match">
+            <div class="row">
+              <div>
+                <label>$ per match</label>
+                <input type="number" id="team-match-value" value="10" min="0" step="1">
+              </div>
+              <div>
+                <label>Net or gross</label>
+                <select id="team-match-net">
+                  <option value="net">Net</option>
+                  <option value="gross">Gross</option>
+                </select>
+              </div>
+            </div>
+            <div class="team-picker-section" data-game="teamMatch">
+              <h3 style="margin-top:10px">Teams</h3>
+              <div class="team-picker" id="team-picker-teamMatch"></div>
+              <div class="help-text" id="team-picker-help-teamMatch">Tap a player to assign them to Team A or Team B. Teams must be even.</div>
+            </div>
+            <div class="help-text">
+              Even player count required (2v2, 3v3, 4v4, etc). Each hole goes to the team with the lower best-ball score; team with most holes won at the end wins the match.
+            </div>
+          </div>
+
+          <!-- TEAM LOW BALL -->
+          <label class="game-toggle">
+            <input type="checkbox" id="game-team-lowball">
+            <div style="flex:1">
+              <div class="name">Team low ball</div>
+              <div class="desc">Even teams. Sum of best-ball over 18. Lowest total wins.</div>
+            </div>
+          </label>
+          <div class="game-options" id="opts-team-lowball">
+            <div class="row">
+              <div>
+                <label>$ per match</label>
+                <input type="number" id="team-lowball-value" value="10" min="0" step="1">
+              </div>
+              <div>
+                <label>Net or gross</label>
+                <select id="team-lowball-net">
+                  <option value="net">Net</option>
+                  <option value="gross">Gross</option>
+                </select>
+              </div>
+            </div>
+            <div class="team-picker-section" data-game="teamLowball">
+              <h3 style="margin-top:10px">Teams</h3>
+              <div class="team-picker" id="team-picker-teamLowball"></div>
+              <div class="help-text" id="team-picker-help-teamLowball">Tap a player to assign them to Team A or Team B. Teams must be even.</div>
+            </div>
+            <div class="help-text">
+              Same teams as team match play if both are enabled. Decided on total score over 18 — each team's score is the sum of their best-ball on each hole.
+            </div>
+          </div>
+
+          <!-- PAR 3 GREENIE -->
+          <label class="game-toggle">
+            <input type="checkbox" id="game-p3greenie">
+            <div style="flex:1">
+              <div class="name">Par 3 Greenie</div>
+              <div class="desc">Closest to pin on par 3s — must make par. Bigger $ than the junk version. Buddy Fucker lives here.</div>
+            </div>
+          </label>
+          <div class="game-options" id="opts-p3greenie">
+            <div class="row">
+              <div>
+                <label>$ per other player</label>
+                <input type="number" id="p3greenie-value" value="5" min="0" step="0.5">
+              </div>
+            </div>
+            <label style="display:flex;align-items:center;gap:8px;margin-top:10px;cursor:pointer">
+              <input type="checkbox" id="p3greenie-bf-enabled" checked style="width:auto;margin:0">
+              <span style="font-size:13px"><strong>Buddy Fucker</strong> — if the Par 3 Greenie winner 3-putts, they forfeit the greenie AND owe each other player a fixed amount</span>
+            </label>
+            <div class="row" style="margin-top:8px">
+              <div>
+                <label>Buddy Fucker $ per other player</label>
+                <input type="number" id="p3greenie-bf-value" value="5" min="0" step="0.5">
+              </div>
+            </div>
+            <div class="help-text">
+              Closest to pin on par 3s wins from each other player — but only if you make par or better. If Buddy Fucker is on and the winner 3-putts, they get $0 for the greenie AND owe each player the Buddy Fucker amount.
+            </div>
+          </div>
+
+          <!-- JUNK -->
+          <label class="game-toggle">
+            <input type="checkbox" id="game-junk">
+            <div style="flex:1">
+              <div class="name">Junk (side bets)</div>
+              <div class="desc">Greenies, Sandies, Polies, etc.</div>
+            </div>
+          </label>
+          <div class="game-options" id="opts-junk">
+            <div class="junk-grid" id="junk-grid">
+              <!-- populated by JS -->
+            </div>
+            <div class="help-text">
+              Each player who earns a junk gets paid that amount by every other player.
+            </div>
+          </div>
+        </div>
+
+        <!-- Edit-live-round banner: shown only when editing the active round mid-play -->
+        <div class="card" id="edit-live-banner" style="display:none;background:rgba(197,224,65,0.12);border-color:var(--accent)">
+          <h2 style="color:var(--accent);margin-bottom:6px">✏️ Editing live round</h2>
+          <p class="help-text" style="margin:0">Changes apply immediately to the round in progress. Dollar-amount changes apply <strong>retroactively</strong> to all 18 holes (including holes already scored).</p>
+        </div>
+
+        <div class="actions">
+          <button class="danger" id="btn-cancel-setup">Cancel</button>
+          <button id="btn-save-tourney" style="flex:1">Save as tournament</button>
+          <button class="primary" id="btn-start-round" style="flex:2">Start round</button>
+          <button class="primary" id="btn-save-edits" style="flex:2;display:none">💾 Save changes</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ SCORE PANEL ============ -->
+
+  <footer class="app-footer">
+    <span>Live Scoring &amp; Betting</span>
+    <span id="sync-indicator" title="Sync status" style="display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--text-muted);vertical-align:middle;margin-left:6px;transition:transform 0.2s,background 0.3s"></span>
+  </footer>
+</div>
+
+<!-- Tournament create modal -->
+<div class="modal-overlay" id="tourney-modal">
+  <div class="modal">
+    <h2 id="tourney-modal-title">New tournament</h2>
+    <div class="field">
+      <label>Tournament name</label>
+      <input type="text" id="tm-name" placeholder="Saturday morning league">
+    </div>
+    <div class="row">
+      <div class="field">
+        <label>Date</label>
+        <input type="date" id="tm-date">
+      </div>
+      <div class="field">
+        <label>Tee time</label>
+        <input type="time" id="tm-time">
+      </div>
+    </div>
+    <div class="field">
+      <label>Course</label>
+      <input type="text" id="tm-course" placeholder="Pine Valley">
+    </div>
+    <div class="field">
+      <label>Players (comma-separated)</label>
+      <textarea id="tm-players" rows="2" placeholder="John, Mike, Dave, Tom"></textarea>
+    </div>
+    <div class="field">
+      <label>Notes</label>
+      <textarea id="tm-notes" rows="2" placeholder="Cart fees, format details, etc."></textarea>
+    </div>
+    <div class="actions">
+      <button id="tm-cancel">Cancel</button>
+      <button class="primary" id="tm-save" style="flex:2">Save tournament</button>
+    </div>
+  </div>
+</div>
+
+<!-- Wolf pick partner modal -->
+<div class="modal-overlay" id="wolf-modal">
+  <div class="modal">
+    <h2>Hole <span id="wolf-hole">—</span> — <span id="wolf-captain">—</span> is captain</h2>
+    <p class="help-text" style="margin-bottom:12px">Pick a partner after seeing tee shots, or go Lone Wolf for double the bet.</p>
+    <div id="wolf-pick-options"></div>
+    <div class="actions">
+      <button id="wolf-cancel">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Huckle modal -->
+<div class="modal-overlay" id="huckle-modal">
+  <div class="modal" style="max-width:520px">
+    <h2>📣 Call a Huckle</h2>
+    <p class="help-text" style="margin-bottom:12px">Players down 2+ can call a Huckle — a separate side bet for the same dollar amount, played from this hole through the end of the segment.</p>
+    <div id="huckle-options"></div>
+    <div class="actions" style="margin-top:14px">
+      <button id="huckle-cancel" style="flex:1">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Player roster picker modal -->
+<div class="modal-overlay" id="roster-modal">
+  <div class="modal">
+    <h2>Pick from saved players</h2>
+    <p class="help-text" style="margin-bottom:8px">Tap to add. Names are saved automatically when you start a round.</p>
+    <input type="text" id="roster-search" placeholder="Search names…" style="width:100%;margin-bottom:10px">
+    <div id="roster-list" style="max-height:340px;overflow-y:auto"></div>
+    <div class="actions" style="margin-top:12px">
+      <button id="roster-cancel" style="flex:1">Done</button>
+    </div>
+  </div>
+</div>
+
+<!-- Round summary modal — shown when finishing a round -->
+<div class="modal-overlay" id="summary-modal">
+  <div class="modal" style="max-width:640px">
+    <h2 style="margin-bottom:4px">🏁 Round complete</h2>
+    <div id="summary-subtitle" class="small-text" style="margin-bottom:14px"></div>
+    <div id="summary-content" style="max-height:60vh;overflow-y:auto"></div>
+    <div class="actions" style="margin-top:14px">
+      <button id="summary-back" style="flex:1">Back to board</button>
+      <button class="primary" id="summary-confirm" style="flex:2">Save & return home</button>
+    </div>
+  </div>
+</div>
+
+<!-- Save-as-tournament prompt: name + date, captures the current setup form -->
+<div class="modal-overlay" id="save-tourney-modal">
+  <div class="modal">
+    <h2>Save as tournament</h2>
+    <p class="help-text" style="margin-bottom:12px">All your current setup (course, players, handicap rules, betting games) will be saved. You can come back any time to start the round — everything stays editable on game day.</p>
+    <div class="field">
+      <label>Tournament name</label>
+      <input type="text" id="stm-name" placeholder="e.g. Saturday at Buffalo Creek">
+    </div>
+    <div class="row" style="margin-top:8px">
+      <div>
+        <label>Date (optional)</label>
+        <input type="date" id="stm-date">
+      </div>
+      <div>
+        <label>Time (optional)</label>
+        <input type="time" id="stm-time">
+      </div>
+    </div>
+    <div class="field" style="margin-top:8px">
+      <label>Notes (optional)</label>
+      <textarea id="stm-notes" rows="2" placeholder="Anything to remember"></textarea>
+    </div>
+    <div class="actions" style="margin-top:14px">
+      <button id="stm-cancel" style="flex:1">Cancel</button>
+      <button class="primary" id="stm-save" style="flex:2">Save tournament</button>
+    </div>
+  </div>
+</div>
+
+<!-- Tournament action sheet: shown when tapping a tourney card -->
+<div class="modal-overlay" id="tourney-actions-modal">
+  <div class="modal">
+    <h2 id="tam-name">Tournament</h2>
+    <div id="tam-meta" class="small-text" style="margin-bottom:14px"></div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <button class="primary full" id="tam-start">▶ Start round now</button>
+      <button class="full" id="tam-edit">Edit details</button>
+      <button class="danger full" id="tam-delete">Delete tournament</button>
+      <button class="full" id="tam-cancel">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- Fixed active-round bar (sits at bottom of viewport, only shown when round active) -->
+<div id="active-round-bar" style="display:none">
+  <div id="active-round-bar-info"></div>
+  <div style="display:flex;gap:6px;margin-top:6px">
+    <button class="primary small" style="flex:1" onclick="switchTab('score')">Continue scoring</button>
+    <button class="small" style="flex:1" onclick="switchTab('board')">View board</button>
+  </div>
+</div>
+
+  </div><!-- /main -->
+</div><!-- /app -->
+<script src="shared.js"></script>
+</body>
+</html>

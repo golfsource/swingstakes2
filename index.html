@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Home — SwingStakes</title>
+<link rel="stylesheet" href="shared.css">
+
+</head>
+<body>
+<div class="app">
+  <div id="loading" class="empty">Loading...</div>
+  <div id="main" style="display:none">
+    <nav class="tabs">
+      <a href="index.html" class="tab  active">Home</a>
+      <a href="setup.html" class="tab">Setup</a>
+      <a href="score.html" class="tab" id="tab-score">Score</a>
+      <a href="board.html" class="tab" id="tab-board">Board</a>
+      <a href="rounds.html" class="tab">Rounds</a>
+      <a href="events.html" class="tab">Events</a>
+      <a href="bets.html" class="tab">Bets</a>
+      <a href="stats.html" class="tab">Stats</a>
+    </nav>
+    <div class="panel active" id="panel-home">
+      <!-- Spacer pushes the Quick start card to the bottom so the bg image gets the upper half -->
+      <div class="home-spacer"></div>
+
+      <div class="card">
+        <h2>Quick start</h2>
+        <button class="primary full" id="btn-quick-new" style="margin-bottom:10px">New round now</button>
+        <button class="full" id="btn-quick-join">Join with code</button>
+      </div>
+    </div>
+
+    <!-- ============ ROUNDS PANEL ============ -->
+
+  <footer class="app-footer">
+    <span>Live Scoring &amp; Betting</span>
+    <span id="sync-indicator" title="Sync status" style="display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--text-muted);vertical-align:middle;margin-left:6px;transition:transform 0.2s,background 0.3s"></span>
+  </footer>
+</div>
+
+<!-- Tournament create modal -->
+<div class="modal-overlay" id="tourney-modal">
+  <div class="modal">
+    <h2 id="tourney-modal-title">New tournament</h2>
+    <div class="field">
+      <label>Tournament name</label>
+      <input type="text" id="tm-name" placeholder="Saturday morning league">
+    </div>
+    <div class="row">
+      <div class="field">
+        <label>Date</label>
+        <input type="date" id="tm-date">
+      </div>
+      <div class="field">
+        <label>Tee time</label>
+        <input type="time" id="tm-time">
+      </div>
+    </div>
+    <div class="field">
+      <label>Course</label>
+      <input type="text" id="tm-course" placeholder="Pine Valley">
+    </div>
+    <div class="field">
+      <label>Players (comma-separated)</label>
+      <textarea id="tm-players" rows="2" placeholder="John, Mike, Dave, Tom"></textarea>
+    </div>
+    <div class="field">
+      <label>Notes</label>
+      <textarea id="tm-notes" rows="2" placeholder="Cart fees, format details, etc."></textarea>
+    </div>
+    <div class="actions">
+      <button id="tm-cancel">Cancel</button>
+      <button class="primary" id="tm-save" style="flex:2">Save tournament</button>
+    </div>
+  </div>
+</div>
+
+<!-- Wolf pick partner modal -->
+<div class="modal-overlay" id="wolf-modal">
+  <div class="modal">
+    <h2>Hole <span id="wolf-hole">—</span> — <span id="wolf-captain">—</span> is captain</h2>
+    <p class="help-text" style="margin-bottom:12px">Pick a partner after seeing tee shots, or go Lone Wolf for double the bet.</p>
+    <div id="wolf-pick-options"></div>
+    <div class="actions">
+      <button id="wolf-cancel">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Huckle modal -->
+<div class="modal-overlay" id="huckle-modal">
+  <div class="modal" style="max-width:520px">
+    <h2>📣 Call a Huckle</h2>
+    <p class="help-text" style="margin-bottom:12px">Players down 2+ can call a Huckle — a separate side bet for the same dollar amount, played from this hole through the end of the segment.</p>
+    <div id="huckle-options"></div>
+    <div class="actions" style="margin-top:14px">
+      <button id="huckle-cancel" style="flex:1">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Player roster picker modal -->
+<div class="modal-overlay" id="roster-modal">
+  <div class="modal">
+    <h2>Pick from saved players</h2>
+    <p class="help-text" style="margin-bottom:8px">Tap to add. Names are saved automatically when you start a round.</p>
+    <input type="text" id="roster-search" placeholder="Search names…" style="width:100%;margin-bottom:10px">
+    <div id="roster-list" style="max-height:340px;overflow-y:auto"></div>
+    <div class="actions" style="margin-top:12px">
+      <button id="roster-cancel" style="flex:1">Done</button>
+    </div>
+  </div>
+</div>
+
+<!-- Round summary modal — shown when finishing a round -->
+<div class="modal-overlay" id="summary-modal">
+  <div class="modal" style="max-width:640px">
+    <h2 style="margin-bottom:4px">🏁 Round complete</h2>
+    <div id="summary-subtitle" class="small-text" style="margin-bottom:14px"></div>
+    <div id="summary-content" style="max-height:60vh;overflow-y:auto"></div>
+    <div class="actions" style="margin-top:14px">
+      <button id="summary-back" style="flex:1">Back to board</button>
+      <button class="primary" id="summary-confirm" style="flex:2">Save & return home</button>
+    </div>
+  </div>
+</div>
+
+<!-- Save-as-tournament prompt: name + date, captures the current setup form -->
+<div class="modal-overlay" id="save-tourney-modal">
+  <div class="modal">
+    <h2>Save as tournament</h2>
+    <p class="help-text" style="margin-bottom:12px">All your current setup (course, players, handicap rules, betting games) will be saved. You can come back any time to start the round — everything stays editable on game day.</p>
+    <div class="field">
+      <label>Tournament name</label>
+      <input type="text" id="stm-name" placeholder="e.g. Saturday at Buffalo Creek">
+    </div>
+    <div class="row" style="margin-top:8px">
+      <div>
+        <label>Date (optional)</label>
+        <input type="date" id="stm-date">
+      </div>
+      <div>
+        <label>Time (optional)</label>
+        <input type="time" id="stm-time">
+      </div>
+    </div>
+    <div class="field" style="margin-top:8px">
+      <label>Notes (optional)</label>
+      <textarea id="stm-notes" rows="2" placeholder="Anything to remember"></textarea>
+    </div>
+    <div class="actions" style="margin-top:14px">
+      <button id="stm-cancel" style="flex:1">Cancel</button>
+      <button class="primary" id="stm-save" style="flex:2">Save tournament</button>
+    </div>
+  </div>
+</div>
+
+<!-- Tournament action sheet: shown when tapping a tourney card -->
+<div class="modal-overlay" id="tourney-actions-modal">
+  <div class="modal">
+    <h2 id="tam-name">Tournament</h2>
+    <div id="tam-meta" class="small-text" style="margin-bottom:14px"></div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <button class="primary full" id="tam-start">▶ Start round now</button>
+      <button class="full" id="tam-edit">Edit details</button>
+      <button class="danger full" id="tam-delete">Delete tournament</button>
+      <button class="full" id="tam-cancel">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- Fixed active-round bar (sits at bottom of viewport, only shown when round active) -->
+<div id="active-round-bar" style="display:none">
+  <div id="active-round-bar-info"></div>
+  <div style="display:flex;gap:6px;margin-top:6px">
+    <button class="primary small" style="flex:1" onclick="switchTab('score')">Continue scoring</button>
+    <button class="small" style="flex:1" onclick="switchTab('board')">View board</button>
+  </div>
+</div>
+
+  </div><!-- /main -->
+</div><!-- /app -->
+<script src="shared.js"></script>
+</body>
+</html>
